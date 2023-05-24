@@ -11,17 +11,20 @@ import (
 
 type token struct {
 	directive directive
-	args      []string // ["if"] or ["then", "test.go:ID"]
+	args      []string // ["IF", "test.go:ID"] or ["END", "id"]
 
 	line int32 // Line number of the token.
 }
 
 type directive string
 
+// LINT.IF id00
 const (
-	directiveIf   directive = "IF"
-	directiveThen directive = "THEN"
+	directiveIf  directive = "IF"
+	directiveEnd directive = "END"
 )
+
+//LINT.END
 
 type directiveTemplate struct {
 	templates []string // "//LINT.?" | "#LINT.?" | "<!-- LINT.? -->"
@@ -54,6 +57,7 @@ func (o *lexOptions) templatesFromFile() (*[]string, error) {
 	return nil, errors.Errorf("no directive template found for file type %q", fileType)
 }
 
+// lex lexes the given reader and returns the list of tokens.
 func lex(r io.Reader, options lexOptions) ([]token, error) {
 	templates, err := options.templatesFromFile()
 	if err != nil {
@@ -92,6 +96,7 @@ func lex(r io.Reader, options lexOptions) ([]token, error) {
 	return tokens, nil
 }
 
+// parseToken parses the given line and returns the token if it is a directive.
 func parseToken(line string, lineNumber int32, templates []string) (*token, bool, error) {
 	for _, template := range templates {
 		prefix, suffix, found := strings.Cut(template, "?")
@@ -118,19 +123,21 @@ func parseToken(line string, lineNumber int32, templates []string) (*token, bool
 		}, true, nil
 	}
 
-	return nil, false, errors.New("line is missing directive")
+	return nil, false, nil
 }
 
+// parseDirective parses the given string and returns the directive.
 func parseDirective(s string) (directive, error) {
 	d := directive(s)
 	switch d {
-	case directiveIf, directiveThen:
+	case directiveIf, directiveEnd:
 		return d, nil
 	default:
 		return "", errors.Errorf("unknown directive %q", d)
 	}
 }
 
+// parseRules parses the given tokens and returns the list of rules.
 func parseRules(file string, tokens []token) ([]Rule, error) {
 	// Current rule being parsed.
 	r := Rule{}
@@ -145,18 +152,6 @@ func parseRules(file string, tokens []token) ([]Rule, error) {
 
 			r.Hunk.File = file
 			r.Hunk.Range = Range{Start: token.line}
-			if len(token.args) == 1 {
-				r.ID = &(token.args[0])
-			}
-
-			if len(token.args) > 1 {
-				return nil, errors.Errorf("unexpected arguments %v", token.args)
-			}
-
-		case directiveThen:
-			if r.Hunk.File == "" {
-				return nil, errors.New("unexpected THEN directive")
-			}
 
 			targets, err := parseTargets(parseTargetsOptions{
 				args:       token.args,
@@ -167,6 +162,20 @@ func parseRules(file string, tokens []token) ([]Rule, error) {
 			}
 
 			r.Targets = targets
+
+		case directiveEnd:
+			if r.Hunk.File == "" {
+				return nil, errors.New("unexpected END directive")
+			}
+
+			if len(token.args) == 1 {
+				r.ID = &(token.args[0])
+			}
+
+			if len(token.args) > 1 {
+				return nil, errors.Errorf("unexpected arguments %v", token.args)
+			}
+
 			r.Hunk.Range.End = token.line
 			rules = append(rules, r)
 
@@ -181,11 +190,13 @@ func parseRules(file string, tokens []token) ([]Rule, error) {
 	return rules, nil
 }
 
+// parseTargets parses the given list of targets and returns the list of targets.
 type parseTargetsOptions struct {
 	args       []string
 	allowEmpty bool
 }
 
+// parseTargets parses the given list of targets and returns the list of targets.
 func parseTargets(o parseTargetsOptions) ([]Target, error) {
 	if !o.allowEmpty && len(o.args) == 0 {
 		return nil, errors.New("missing target")

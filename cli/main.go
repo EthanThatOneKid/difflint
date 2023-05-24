@@ -1,3 +1,4 @@
+// Run:
 // git diff | go run cli/main.go
 
 package main

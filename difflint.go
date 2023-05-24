@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"strings"
 
 	"github.com/pkg/errors"
 
@@ -14,8 +12,11 @@ import (
 
 // Range represents a range of line numbers.
 type Range struct {
-	Start int32 // Start line number
-	End   int32 // End line number
+	// Start line number.
+	Start int32
+
+	// End line number.
+	End int32
 }
 
 // LintOptions represents the options for a linting operation.
@@ -30,41 +31,14 @@ type LintOptions struct {
 	Exclude []string
 }
 
-// .js, .ts, .tsx, .jsonc -> //LINT.
+//LINT.IF ./lex.go:id00
 
-//LINT.THEN ./test.go ./test2.go:ID
-
-//LINT.ID id
-
-// Target represents a file or range of code that must be present in the diff if a diff hunk is present.
-type Target struct {
-	// File specifier expected to contain a diff hunk.
-	File string
-
-	// ID is the ID of the range of code in which a diff hunk intersects.
-	ID *string
-	// Range *Range
+// Between returns true if changes exist between the given line numbers.
+func Between(a, b Range) bool {
+	return a.Start <= b.Start && a.End >= b.End
 }
 
-//LINT.IF id
-
-//LINT.THEN ./test.go:testID
-
-//LINT.ID
-//LINT.IF [id]
-//LINT.THEN [file:ID]...
-
-// A rule says that file or range of code must be present in the diff if another range is present.
-type Rule struct {
-	// Hunk is the diff hunk that must be present in the diff.
-	Hunk Hunk
-
-	// Targets are the files or ranges of code that must be present in the diff if the hunk is present.
-	Targets []Target
-
-	// ID is an optional, unique identifier for the rule.
-	ID *string
-}
+//LINT.END id01
 
 // Hunk represents a diff hunk that must be present in the diff.
 type Hunk struct {
@@ -89,33 +63,59 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse diff hunks")
 	}
 
-	// First step is to load all relevant rules.
-	var fs map[string][]Rule
-	for _, hunk := range hunks {
-		if _, ok := fs[hunk.File]; ok {
-			continue
-		}
-		
-		// Parse rules for the file.
-			log.Println("Parsing rules for file", hunk.File)
-			fs[hunk.File] = []Rule{
-				Hunk: hunk,
-				Targets: []Target{hunk}
-			}
-		
-		// fs[hunk.File] = append(fs[hunk.File], Rule{
-		// 	Hunk: hunk,
-		// })
+	// Parse rules from hunks.
+	rulesMap, err := RulesFromHunks(hunks)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
-	// Next step is to check if the diff contains any hunks that are covered by a rule.
-	// tokens, err := lex(o.Reader, lexOptions{
-	// 	templates: []directiveTemplate{
-	// Next step is to check if the diff contains any hunks that are covered by a rule.
+	// Print out rules.
+	log.Println("Rules:", rulesMap)
 
-	// Next step is to check if the diff contains all the targets of the rules that are covered by a hunk.
+	return nil /* TODO */, nil
+	// Check if the diff contains any hunks that are covered by a rule.
+	var unsatisfiedRules []Rule
+	for rulePath, rules := range rulesMap {
+		for _, rule := range rules {
+			// Check if the rule is in its own file.
+			if rule.Hunk.File == rulePath {
+				log.Println("Warning: Rule in own file does nothing:", rule)
+			}
 
-	return nil, nil
+			// Check if the diff contains all the targets of the rule.
+			for _, target := range rule.Targets {
+				// Check if the target is a file or a range of code.
+				if !Check(target, hunks, rules) {
+					continue
+				}
+
+				unsatisfiedRules = append(unsatisfiedRules, rule)
+			}
+		}
+	}
+
+	return &LintResult{
+		UnsatisfiedRules: unsatisfiedRules,
+	}, nil
+}
+
+// Check checks if the given hunk is covered by the given target.
+func Check(target Target, hunks []Hunk, rules []Rule) bool {
+	for _, hunk := range hunks {
+		if target.ID != nil {
+			for _, rule := range rules {
+				if rule.ID == target.ID && Between(hunk.Range, rule.Hunk.Range) {
+					return true
+				}
+			}
+		}
+
+		if hunk.File == target.File {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Entrypoint for the difflint command.
@@ -130,35 +130,11 @@ func Do(r io.Reader, include, exclude []string) error {
 		return errors.Wrap(err, "failed to lint hunks")
 	}
 
-	// Print the result
+	// Print the result.
 	fmt.Println(result)
 
 	return nil
 }
-
-// Given what has changed in the diff, we need to figure out which checks to run.
-// Given what has changed in the diff that requires
-
-// DiffRange represents a range of line numbers in a diff.
-// type DiffRange struct {
-// 	Range   Range  // Line number range
-// 	NewName string // Name of the file in the diff
-// }
-
-// Between returns true if changes exist between the given line numbers.
-// func Between(d diff.FileDiff, start, end int32) bool {
-// 	for _, h := range d.Hunks {
-// 		newEndLine := h.NewStartLine + h.NewLines - 1
-// 		if h.NewStartLine <= start && newEndLine >= end {
-// 			return true
-// 		}
-// 	}
-
-// 	return false
-// }
-
-// TODO: Implement this function
-// func Lint() // Lint passes options to the linter and returns the result.
 
 // ParseHunks parses the input diff and returns the extracted file paths along
 // with associated line number ranges.
@@ -182,26 +158,4 @@ func ParseHunks(r io.Reader) ([]Hunk, error) {
 	}
 
 	return hunks, nil
-}
-
-func ReadA(oldName string) (*os.File, error) {
-	return ReadFile(oldName, "a/")
-}
-
-func ReadB(newName string) (*os.File, error) {
-	return ReadFile(newName, "b/")
-}
-
-func ReadFile(prefixedFile, prefix string) (*os.File, error) {
-	if !strings.HasPrefix(prefixedFile, prefix) {
-		return nil, fmt.Errorf("unexpected file name: %s", prefixedFile)
-	}
-
-	relativePath := strings.TrimPrefix(prefixedFile, prefix)
-	f, err := os.Open(relativePath)
-	if err != nil {
-		return nil, fmt.Errorf("unexpected to open file %s: %v", prefixedFile, err)
-	}
-
-	return f, nil
 }
