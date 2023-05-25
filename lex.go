@@ -3,7 +3,6 @@ package difflint
 import (
 	"bufio"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -18,52 +17,25 @@ type token struct {
 
 type directive string
 
-// LINT.IF id00
+//LINT.IF id00
+
 const (
 	directiveIf  directive = "IF"
 	directiveEnd directive = "END"
 )
 
-//LINT.END
-
-type directiveTemplate struct {
-	templates []string // "//LINT.?" | "#LINT.?" | "<!-- LINT.? -->"
-	fileTypes []string // []string{"js", "ts", "tsx", "jsonc"}
-}
+//LINT.END id01
 
 type lexOptions struct {
-	// File is specifier that is being linted.
+	// file is specifier that is being linted.
 	file string
 
-	// Templates is a list of templates that define which directives to parse.
-	templates []directiveTemplate
-}
-
-// templateFromFileType returns the directive template for the given file type.
-func (o *lexOptions) templatesFromFile() (*[]string, error) {
-	fileType := strings.TrimPrefix(filepath.Ext(o.file), ".")
-	if fileType == "" {
-		return nil, errors.Errorf("file %q has no extension", o.file)
-	}
-
-	for _, template := range o.templates {
-		for _, t := range template.fileTypes {
-			if t == fileType {
-				return &template.templates, nil
-			}
-		}
-	}
-
-	return nil, errors.Errorf("no directive template found for file type %q", fileType)
+	// templates is the list of directive templates.
+	templates []string
 }
 
 // lex lexes the given reader and returns the list of tokens.
 func lex(r io.Reader, options lexOptions) ([]token, error) {
-	templates, err := options.templatesFromFile()
-	if err != nil {
-		return nil, err
-	}
-
 	// tokens is the list of tokens that are found in the file.
 	var tokens []token
 
@@ -77,7 +49,7 @@ func lex(r io.Reader, options lexOptions) ([]token, error) {
 		lineCount++
 
 		// Check if the line is a directive.
-		token, found, err := parseToken(line, lineCount, *templates)
+		token, found, err := parseToken(line, lineCount, options.templates)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +119,7 @@ func parseRules(file string, tokens []token) ([]Rule, error) {
 		switch token.directive {
 		case directiveIf:
 			if r.Hunk.File != "" {
-				return nil, errors.New("unexpected IF directive")
+				return nil, errors.New("unexpected IF directive at " + file + ":" + string(token.line))
 			}
 
 			r.Hunk.File = file
@@ -165,7 +137,7 @@ func parseRules(file string, tokens []token) ([]Rule, error) {
 
 		case directiveEnd:
 			if r.Hunk.File == "" {
-				return nil, errors.New("unexpected END directive")
+				return nil, errors.New("unexpected END directive at " + file + ":" + string(token.line))
 			}
 
 			if len(token.args) == 1 {
@@ -205,12 +177,12 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 	var targets []Target
 	for _, arg := range o.args {
 		file, id, hasID := strings.Cut(arg, ":")
-		target := Target{File: file}
-		if hasID {
-			target.ID = &id
+		if !hasID && !strings.HasPrefix("./", file) {
+			targets = append(targets, Target{ID: &file})
+			continue
 		}
 
-		targets = append(targets, target)
+		targets = append(targets, Target{File: &file, ID: &id})
 	}
 
 	return targets, nil

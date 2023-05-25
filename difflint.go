@@ -1,9 +1,12 @@
 package difflint
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -19,6 +22,11 @@ type Range struct {
 	End int32
 }
 
+// Intersects returns true if the given ranges intersect.
+func Intersects(a, b Range) bool {
+	return a.Start <= b.End && b.Start <= a.End
+}
+
 // LintOptions represents the options for a linting operation.
 type LintOptions struct {
 	// Reader is the reader from which the diff is read.
@@ -29,14 +37,41 @@ type LintOptions struct {
 
 	// Exclude is a list of file patterns to exclude from the linting.
 	Exclude []string
+
+	// Templates is the list of directive templates.
+	Templates []string // []string{"//LINT.?", "#LINT.?", "<!-- LINT.? -->"}
+
+	// FileExtMap is a map of file extensions to directive templates.
+	FileExtMap map[string][]int32 // map[string][]int32{".go": []int32{0}, ".py": []int32{1}}
+
+	// DefaultTemplate is the default directive template.
+	DefaultTemplate int32
+}
+
+// TemplatesFromFile returns the directive templates for the given file type.
+func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
+	fileType := strings.TrimPrefix(filepath.Ext(file), ".")
+	if fileType == "" {
+		return nil, errors.Errorf("file %q has no extension", file)
+	}
+
+	templateIndices, ok := o.FileExtMap[fileType]
+	if !ok {
+		return nil, errors.Errorf("no directive template found for file type %q", fileType)
+	}
+
+	var filteredTemplates []string
+	for _, i := range templateIndices {
+		filteredTemplates = append(filteredTemplates, o.Templates[i])
+	}
+
+	if len(filteredTemplates) == 0 {
+		filteredTemplates = append(filteredTemplates, o.Templates[o.DefaultTemplate])
+	}
+	return filteredTemplates, nil
 }
 
 //LINT.IF ./lex.go:id00
-
-// Between returns true if changes exist between the given line numbers.
-func Between(a, b Range) bool {
-	return a.Start <= b.Start && a.End >= b.End
-}
 
 //LINT.END id01
 
@@ -64,13 +99,17 @@ func Lint(o LintOptions) (*LintResult, error) {
 	}
 
 	// Parse rules from hunks.
-	rulesMap, err := RulesFromHunks(hunks)
+	rulesMap, err := RulesMapFromHunks(hunks, o)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
-	// Print out rules.
-	log.Println("Rules:", rulesMap)
+	// TODO: Remove this.
+	payload, err := json.MarshalIndent(rulesMap, "", "  ")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal rules")
+	}
+	log.Println("Rules:", string(payload))
 
 	return nil /* TODO */, nil
 	// Check if the diff contains any hunks that are covered by a rule.
@@ -104,13 +143,13 @@ func Check(target Target, hunks []Hunk, rules []Rule) bool {
 	for _, hunk := range hunks {
 		if target.ID != nil {
 			for _, rule := range rules {
-				if rule.ID == target.ID && Between(hunk.Range, rule.Hunk.Range) {
+				if rule.ID == target.ID && Intersects(hunk.Range, rule.Hunk.Range) {
 					return true
 				}
 			}
 		}
 
-		if hunk.File == target.File {
+		if hunk.File == *target.File {
 			return true
 		}
 	}
@@ -122,9 +161,40 @@ func Check(target Target, hunks []Hunk, rules []Rule) bool {
 func Do(r io.Reader, include, exclude []string) error {
 	// Lint the hunks.
 	result, err := Lint(LintOptions{
-		Reader:  r,
-		Include: include,
-		Exclude: exclude,
+		Reader:          r,
+		Include:         include,
+		Exclude:         exclude,
+		DefaultTemplate: 0,
+		Templates: []string{
+			"#LINT.?",
+			"//LINT.?",
+			"/*LINT.?",
+			"<!--LINT.?",
+			"'LINT.?",
+		},
+		FileExtMap: map[string][]int32{
+			"py":     {0},
+			"go":     {1},
+			"js":     {1, 2},
+			"jsx":    {1, 2},
+			"mjs":    {1, 2},
+			"ts":     {1, 2},
+			"tsx":    {1, 2},
+			"jsonc":  {1, 2},
+			"c":      {1, 2},
+			"cc":     {1, 2},
+			"cpp":    {1, 2},
+			"h":      {1, 2},
+			"hpp":    {1, 2},
+			"java":   {1},
+			"rs":     {1},
+			"swift":  {1},
+			"svelte": {1, 2, 3},
+			"css":    {2},
+			"html":   {3},
+			"md":     {3},
+			"bas":    {4},
+		},
 	})
 	if err != nil {
 		return errors.Wrap(err, "failed to lint hunks")

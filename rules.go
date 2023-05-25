@@ -13,7 +13,7 @@ import (
 // if a diff hunk is present.
 type Target struct {
 	// File specifier expected to contain a diff hunk.
-	File string
+	File *string
 
 	// ID is the ID of the range of code in which a diff hunk intersects.
 	ID *string
@@ -31,8 +31,9 @@ type Rule struct {
 	ID *string
 }
 
-// RulesFromHunks parses rules from the given hunks.
-func RulesFromHunks(hunks []Hunk) (map[string][]Rule, error) {
+// RulesMapFromHunks parses rules from the given hunks by file name and
+// returns the map of rules.
+func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, error) {
 	rulesMap := make(map[string][]Rule, len(hunks))
 	for _, hunk := range hunks {
 		if _, ok := rulesMap[hunk.File]; ok {
@@ -47,14 +48,14 @@ func RulesFromHunks(hunks []Hunk) (map[string][]Rule, error) {
 		}
 		defer file.Close()
 
+		templates, err := options.TemplatesFromFile(hunk.File)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse templates for file %s", hunk.File)
+		}
+
 		tokens, err := lex(file, lexOptions{
-			file: hunk.File,
-			templates: []directiveTemplate{
-				{
-					templates: []string{"//LINT.?", "#LINT.?", "<!-- LINT.? -->"},
-					fileTypes: []string{"js", "ts", "tsx", "jsonc", "go", "html", "md"},
-				},
-			},
+			file:      hunk.File,
+			templates: templates,
 		})
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to lex file %s", hunk.File)
