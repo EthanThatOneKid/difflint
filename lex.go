@@ -177,12 +177,12 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 	var targets []Target
 	for _, arg := range o.args {
 		file, id, hasID := strings.Cut(arg, ":")
-		if !hasID && !strings.HasPrefix("./", file) {
-			targets = append(targets, Target{ID: &file})
-			continue
+		target := Target{File: &file}
+		if hasID {
+			target.ID = &id
 		}
 
-		targets = append(targets, Target{File: &file, ID: &id})
+		targets = append(targets, target)
 	}
 
 	return targets, nil

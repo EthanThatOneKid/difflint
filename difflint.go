@@ -1,7 +1,6 @@
 package difflint
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +11,8 @@ import (
 
 	"github.com/sourcegraph/go-diff/diff"
 )
+
+// Hello world
 
 // Range represents a range of line numbers.
 type Range struct {
@@ -104,14 +105,6 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
-	// TODO: Remove this.
-	payload, err := json.MarshalIndent(rulesMap, "", "  ")
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal rules")
-	}
-	log.Println("Rules:", string(payload))
-
-	return nil /* TODO */, nil
 	// Check if the diff contains any hunks that are covered by a rule.
 	var unsatisfiedRules []Rule
 	for rulePath, rules := range rulesMap {
