@@ -197,3 +197,9 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 
 	return targets, nil
 }
+
+//LINT.IF :id00
+
+// Hello world.
+
+//LINT.END :id00

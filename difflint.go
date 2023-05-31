@@ -128,15 +128,64 @@ func Lint(o LintOptions) (*LintResult, error) {
 	return &LintResult{UnsatisfiedRules: unsatisfiedRules}, nil
 }
 
+// TargetKey returns the key for the given target.
+// TODO: Make this more consistent so that the Analyze function can work.
+func TargetKey(pathname string, target Target) string {
+	targetKey := pathname
+	if target.File != nil && *target.File != "" {
+		targetKey = *target.File
+		if !filepath.IsAbs(targetKey) {
+			targetKey = filepath.Join(filepath.Dir(pathname), targetKey)
+		}
+	}
+
+	if target.ID != nil {
+		targetKey += ":" + *target.ID
+	}
+
+	return targetKey
+}
+
 // Analyze analyzes the rules and returns a list of errors.
 func Analyze(rulesMap map[string][]Rule) []error {
-	return nil
+	// Append an error for each rule that has a non-existent target.
+	var errs []error
+
+	// Construct a set of all the targets that exist.
+	targets := make(map[string]struct{})
+	for pathname, rules := range rulesMap {
+		for _, rule := range rules {
+			targets[pathname] = struct{}{}
+			if rule.ID == nil || *rule.ID == "" {
+				continue
+			}
+
+			targetKey := TargetKey(pathname, Target{ID: rule.ID})
+			println("targetKey1", targetKey)
+			targets[targetKey] = struct{}{}
+		}
+	}
+
+	// Iterate through the entire map of rules again to find all the rules with targets that don't exist.
+	for pathname, rules := range rulesMap {
+		for _, rule := range rules {
+			for _, target := range rule.Targets {
+				targetKey := TargetKey(pathname, target)
+				if _, ok := targets[targetKey]; !ok {
+					println("targetKey2", targetKey)
+					errs = append(errs, errors.Errorf("rule %s:L%d-L%d has non-existent target %q", pathname, rule.Hunk.Range.Start, rule.Hunk.Range.End, targetKey))
+				}
+			}
+		}
+	}
+
+	return errs
 }
 
 // Check returns the list of unsatisfied rules for the given map of rules.
 func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 	var unsatisfiedRules []UnsatisfiedRule
-	for filepathA, rulesA := range rulesMap {
+	for pathnameA, rulesA := range rulesMap {
 	outer:
 		for i, ruleA := range rulesA {
 			// Skip if ruleA is not present or if it has no targets.
@@ -144,11 +193,11 @@ func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 				continue
 			}
 
-			for filepathB, rulesB := range rulesMap {
+			for pathnameB, rulesB := range rulesMap {
 			inner:
 				for j, ruleB := range rulesB {
 					// Skip if both rules are present or if ruleA is the same as ruleB.
-					if ruleB.Present || (filepathA == filepathB && i == j) {
+					if ruleB.Present || (pathnameA == pathnameB && i == j) {
 						continue
 					}
 
@@ -157,7 +206,7 @@ func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 					unsatisfiedTargetIndices := make([]int32, 0, len(ruleA.Targets))
 					for k, target := range ruleA.Targets {
 						// ruleA is satisfied by ruleB if ruleB matches a target of ruleA.
-						satisfied := target.ID == ruleB.ID && ((target.File == nil && filepathA == filepathB) || (*target.File == filepathB))
+						satisfied := target.ID == ruleB.ID && ((target.File == nil && pathnameA == pathnameB) || (*target.File == pathnameB))
 						if satisfied {
 							continue inner
 						}
