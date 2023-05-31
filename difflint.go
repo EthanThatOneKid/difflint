@@ -1,7 +1,7 @@
 package difflint
 
 import (
-	"fmt"
+	"encoding/json"
 	"io"
 	"log"
 	"path/filepath"
@@ -74,7 +74,7 @@ func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
 
 //LINT.IF ./lex.go:id00
 
-//LINT.END id01
+//LINT.END :id01
 
 // Hunk represents a diff hunk that must be present in the diff.
 type Hunk struct {
@@ -85,10 +85,19 @@ type Hunk struct {
 	Range Range
 }
 
+// UnsatisfiedRule represents a rule that is not satisfied.
+type UnsatisfiedRule struct {
+	// Rule that is not satisfied.
+	Rule
+
+	// UnsatisfiedTargets is the list of target indices that are not satisfied.
+	UnsatisfiedTargets []int32
+}
+
 // Result of a linting operation.
 type LintResult struct {
 	// List of rules that were not satisfied.
-	UnsatisfiedRules []Rule
+	UnsatisfiedRules []UnsatisfiedRule
 }
 
 // Lint lints the given hunks against the given rules and returns the result.
@@ -105,49 +114,68 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
-	// Check if the diff contains any hunks that are covered by a rule.
-	var unsatisfiedRules []Rule
-	for rulePath, rules := range rulesMap {
-		for _, rule := range rules {
-			// Check if the rule is in its own file.
-			if rule.Hunk.File == rulePath {
-				log.Println("Warning: Rule in own file does nothing:", rule)
-			}
-
-			// Check if the diff contains all the targets of the rule.
-			for _, target := range rule.Targets {
-				// Check if the target is a file or a range of code.
-				if !Check(target, hunks, rules) {
-					continue
-				}
-
-				unsatisfiedRules = append(unsatisfiedRules, rule)
-			}
-		}
+	// Analyze the rules.
+	if errs := Analyze(rulesMap); len(errs) > 0 {
+		return nil, errors.Errorf("analysis errors: %v", errs)
 	}
 
-	return &LintResult{
-		UnsatisfiedRules: unsatisfiedRules,
-	}, nil
+	// Collect the rules that are not satisfied.
+	unsatisfiedRules, err := Check(rulesMap)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to check rules")
+	}
+
+	return &LintResult{UnsatisfiedRules: unsatisfiedRules}, nil
 }
 
-// Check checks if the given hunk is covered by the given target.
-func Check(target Target, hunks []Hunk, rules []Rule) bool {
-	for _, hunk := range hunks {
-		if target.ID != nil {
-			for _, rule := range rules {
-				if rule.ID == target.ID && Intersects(hunk.Range, rule.Hunk.Range) {
-					return true
+// Analyze analyzes the rules and returns a list of errors.
+func Analyze(rulesMap map[string][]Rule) []error {
+	return nil
+}
+
+// Check returns the list of unsatisfied rules for the given map of rules.
+func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
+	var unsatisfiedRules []UnsatisfiedRule
+	for filepathA, rulesA := range rulesMap {
+	outer:
+		for i, ruleA := range rulesA {
+			// Skip if ruleA is not present or if it has no targets.
+			if len(ruleA.Targets) == 0 || !ruleA.Present {
+				continue
+			}
+
+			for filepathB, rulesB := range rulesMap {
+			inner:
+				for j, ruleB := range rulesB {
+					// Skip if both rules are present or if ruleA is the same as ruleB.
+					if ruleB.Present || (filepathA == filepathB && i == j) {
+						continue
+					}
+
+					// Given that ruleA is present and ruleB is not present, check if ruleA
+					// is satisfied by ruleB.
+					unsatisfiedTargetIndices := make([]int32, 0, len(ruleA.Targets))
+					for k, target := range ruleA.Targets {
+						// ruleA is satisfied by ruleB if ruleB matches a target of ruleA.
+						satisfied := target.ID == ruleB.ID && ((target.File == nil && filepathA == filepathB) || (*target.File == filepathB))
+						if satisfied {
+							continue inner
+						}
+
+						unsatisfiedTargetIndices = append(unsatisfiedTargetIndices, int32(k))
+					}
+
+					unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
+						Rule:               ruleA,
+						UnsatisfiedTargets: unsatisfiedTargetIndices,
+					})
+					continue outer
 				}
 			}
 		}
-
-		if hunk.File == *target.File {
-			return true
-		}
 	}
 
-	return false
+	return unsatisfiedRules, nil
 }
 
 // Entrypoint for the difflint command.
@@ -166,35 +194,49 @@ func Do(r io.Reader, include, exclude []string) error {
 			"'LINT.?",
 		},
 		FileExtMap: map[string][]int32{
-			"py":     {0},
-			"go":     {1},
-			"js":     {1, 2},
-			"jsx":    {1, 2},
-			"mjs":    {1, 2},
-			"ts":     {1, 2},
-			"tsx":    {1, 2},
-			"jsonc":  {1, 2},
-			"c":      {1, 2},
-			"cc":     {1, 2},
-			"cpp":    {1, 2},
-			"h":      {1, 2},
-			"hpp":    {1, 2},
-			"java":   {1},
-			"rs":     {1},
-			"swift":  {1},
-			"svelte": {1, 2, 3},
-			"css":    {2},
-			"html":   {3},
-			"md":     {3},
-			"bas":    {4},
+			"py":       {0},
+			"sh":       {0},
+			"go":       {1},
+			"js":       {1, 2},
+			"jsx":      {1, 2},
+			"mjs":      {1, 2},
+			"ts":       {1, 2},
+			"tsx":      {1, 2},
+			"jsonc":    {1, 2},
+			"c":        {1, 2},
+			"cc":       {1, 2},
+			"cpp":      {1, 2},
+			"h":        {1, 2},
+			"hpp":      {1, 2},
+			"java":     {1},
+			"rs":       {1},
+			"swift":    {1},
+			"svelte":   {1, 2, 3},
+			"css":      {2},
+			"html":     {3},
+			"md":       {3},
+			"markdown": {3},
+			"bas":      {4},
 		},
 	})
 	if err != nil {
 		return errors.Wrap(err, "failed to lint hunks")
 	}
 
-	// Print the result.
-	fmt.Println(result)
+	// If there are no unsatisfied rules, return nil.
+	if len(result.UnsatisfiedRules) == 0 {
+		return nil
+	}
+
+	// Print the unsatisfied rules.
+	for _, rule := range result.UnsatisfiedRules {
+		// Print the unsatisfied rule.
+		output, err := json.MarshalIndent(rule, "", "  ")
+		if err != nil {
+			return errors.Wrap(err, "failed to marshal result")
+		}
+		log.Println("Unsatisfied rule:", string(output))
+	}
 
 	return nil
 }

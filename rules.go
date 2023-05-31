@@ -27,6 +27,9 @@ type Rule struct {
 	// Targets are the files or ranges of code that must be present in the diff if the hunk is present.
 	Targets []Target
 
+	// Present is true if the change is present in the diff from which the rules were parsed.
+	Present bool
+
 	// ID is an optional, unique identifier for the rule.
 	ID *string
 }
@@ -34,39 +37,47 @@ type Rule struct {
 // RulesMapFromHunks parses rules from the given hunks by file name and
 // returns the map of rules.
 func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, error) {
-	rulesMap := make(map[string][]Rule, len(hunks))
+	// Separate hunks by file name.
+	rangesMap := make(map[string][]Range, len(hunks))
 	for _, hunk := range hunks {
-		if _, ok := rulesMap[hunk.File]; ok {
+		if _, ok := rangesMap[hunk.File]; ok {
+			rangesMap[hunk.File] = append(rangesMap[hunk.File], hunk.Range)
 			continue
 		}
 
+		rangesMap[hunk.File] = []Range{hunk.Range}
+	}
+
+	// Populate rules map.
+	rulesMap := make(map[string][]Rule, len(hunks))
+	for filepath, ranges := range rangesMap {
 		// Parse rules for the file.
-		log.Println("Parsing rules for file", hunk.File)
-		file, err := ReadB(hunk.File)
+		log.Println("Parsing rules for file", filepath)
+		file, err := ReadB(filepath)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to open file %s", hunk.File)
+			return nil, errors.Wrapf(err, "failed to open file %s", filepath)
 		}
 		defer file.Close()
 
-		templates, err := options.TemplatesFromFile(hunk.File)
+		templates, err := options.TemplatesFromFile(filepath)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse templates for file %s", hunk.File)
+			return nil, errors.Wrapf(err, "failed to parse templates for file %s", filepath)
 		}
 
 		tokens, err := lex(file, lexOptions{
-			file:      hunk.File,
+			file:      filepath,
 			templates: templates,
 		})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to lex file %s", hunk.File)
+			return nil, errors.Wrapf(err, "failed to lex file %s", filepath)
 		}
 
-		rules, err := parseRules(hunk.File, tokens)
+		rules, err := parseRules(filepath, tokens, ranges)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse rules for file %s", hunk.File)
+			return nil, errors.Wrapf(err, "failed to parse rules for file %s", filepath)
 		}
 
-		rulesMap[hunk.File] = rules
+		rulesMap[filepath] = rules
 	}
 
 	return rulesMap, nil

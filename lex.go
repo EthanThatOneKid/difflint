@@ -10,21 +10,23 @@ import (
 
 type token struct {
 	directive directive
-	args      []string // ["IF", "test.go:ID"] or ["END", "id"]
+	args      []string // ["IF", "test.go:ID"] or ["END", ":id"]
 
 	line int32 // Line number of the token.
 }
 
 type directive string
 
-//LINT.IF id00
+//LINT.IF :id00
 
 const (
 	directiveIf  directive = "IF"
 	directiveEnd directive = "END"
 )
 
-//LINT.END id01
+// Hello world.
+
+//LINT.END :id01
 
 type lexOptions struct {
 	// file is specifier that is being linted.
@@ -110,7 +112,7 @@ func parseDirective(s string) (directive, error) {
 }
 
 // parseRules parses the given tokens and returns the list of rules.
-func parseRules(file string, tokens []token) ([]Rule, error) {
+func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 	// Current rule being parsed.
 	r := Rule{}
 
@@ -149,6 +151,14 @@ func parseRules(file string, tokens []token) ([]Rule, error) {
 			}
 
 			r.Hunk.Range.End = token.line
+			for _, rng := range ranges {
+				if !Intersects(r.Hunk.Range, rng) {
+					continue
+				}
+
+				r.Present = true
+				break
+			}
 			rules = append(rules, r)
 
 			// Reset the rule.
