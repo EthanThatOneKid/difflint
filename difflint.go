@@ -104,16 +104,9 @@ func Lint(o LintOptions) (*LintResult, error) {
 	}
 
 	// Parse rules from hunks.
-	rulesMap, targetsMap, err := RulesMapFromHunks(hunks, o)
+	rulesMap, _, err := RulesMapFromHunks(hunks, o)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
-	}
-
-	// Analyze the rules.
-	if errs := Analyze(rulesMap, targetsMap); len(errs) > 0 {
-		for _, err := range errs {
-			log.Printf("error: %s", err)
-		}
 	}
 
 	// Collect the rules that are not satisfied.
@@ -153,28 +146,6 @@ func isRelativeToCurrentDirectory(path string) bool {
 	}
 
 	return false
-}
-
-// Analyze analyzes the rules and returns a list of errors.
-func Analyze(rulesMap map[string][]Rule, targetsMap map[string]struct{}) []error {
-	// Append an error for each rule that has a non-existent target.
-	var errs []error
-
-	// TODO: Check for duplicate targets on a single rule.
-
-	// Iterate through the entire map of rules again to find all the rules with targets that don't exist.
-	for pathname, rules := range rulesMap {
-		for _, rule := range rules {
-			for _, target := range rule.Targets {
-				targetKey := TargetKey(pathname, target)
-				if _, ok := targetsMap[targetKey]; !ok {
-					errs = append(errs, errors.Errorf("rule (%s:%d,%s:%d) targets non-existent %s", pathname, rule.Hunk.Range.Start, pathname, rule.Hunk.Range.End, targetKey))
-				}
-			}
-		}
-	}
-
-	return errs
 }
 
 // Check returns the list of unsatisfied rules for the given map of rules.

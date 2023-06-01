@@ -115,7 +115,7 @@ func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 		switch token.directive {
 		case directiveIf:
 			if r.Hunk.File != "" {
-				return nil, errors.New("unexpected IF directive at " + file + ":" + string(token.line))
+				return nil, errors.New("unexpected IF directive at " + file + ":" + string(rune(token.line)))
 			}
 
 			r.Hunk.File = file
@@ -133,7 +133,7 @@ func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 
 		case directiveEnd:
 			if r.Hunk.File == "" {
-				return nil, errors.New("unexpected END directive at " + file + ":" + string(token.line))
+				return nil, errors.New("unexpected END directive at " + file + ":" + string(rune(token.line)))
 			}
 
 			if len(token.args) == 1 {
