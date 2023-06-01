@@ -1,10 +1,8 @@
 package difflint
 
 import (
-	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -53,10 +51,11 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, er
 	for filepath, ranges := range rangesMap {
 		// Parse rules for the file.
 		log.Println("Parsing rules for file", filepath)
-		file, err := ReadB(filepath)
+		file, err := os.Open(filepath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to open file %s", filepath)
 		}
+
 		defer file.Close()
 
 		templates, err := options.TemplatesFromFile(filepath)
@@ -83,27 +82,27 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, er
 	return rulesMap, nil
 }
 
-// ReadA reads the file with the given name from the a/ directory.
-func ReadA(oldName string) (*os.File, error) {
-	return ReadFile(oldName, "a/")
-}
+// // ReadA reads the file with the given name from the a/ directory.
+// func ReadA(oldName string) (*os.File, error) {
+// 	return ReadFile(oldName, "a/")
+// }
 
-// ReadB reads the file with the given name from the b/ directory.
-func ReadB(newName string) (*os.File, error) {
-	return ReadFile(newName, "b/")
-}
+// // ReadB reads the file with the given name from the b/ directory.
+// func ReadB(newName string) (*os.File, error) {
+// 	return ReadFile(newName, "b/")
+// }
 
-// ReadFile reads the file with the given name from the given prefix.
-func ReadFile(prefixedFile, prefix string) (*os.File, error) {
-	if !strings.HasPrefix(prefixedFile, prefix) {
-		return nil, fmt.Errorf("unexpected file name: %s", prefixedFile)
-	}
+// // ReadFile reads the file with the given name from the given prefix.
+// func ReadFile(prefixedFile, prefix string) (*os.File, error) {
+// 	if !strings.HasPrefix(prefixedFile, prefix) {
+// 		return nil, fmt.Errorf("unexpected file name: %s", prefixedFile)
+// 	}
 
-	relativePath := strings.TrimPrefix(prefixedFile, prefix)
-	f, err := os.Open(relativePath)
-	if err != nil {
-		return nil, fmt.Errorf("unexpected to open file %s: %v", prefixedFile, err)
-	}
+// 	relativePath := strings.TrimPrefix(prefixedFile, prefix)
+// 	f, err := os.Open(relativePath)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("unexpected to open file %s: %v", prefixedFile, err)
+// 	}
 
-	return f, nil
-}
+// 	return f, nil
+// }

@@ -10,7 +10,7 @@ import (
 
 type token struct {
 	directive directive
-	args      []string // ["IF", "test.go:ID"] or ["END", ":id"]
+	args      []string // ["IF", "test.go:ID"] or ["END", "id"]
 
 	line int32 // Line number of the token.
 }
@@ -26,7 +26,7 @@ const (
 
 // Hello world.
 
-//LINT.END :id01
+//LINT.END id01
 
 type lexOptions struct {
 	// file is specifier that is being linted.
@@ -187,7 +187,11 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 	var targets []Target
 	for _, arg := range o.args {
 		file, id, hasID := strings.Cut(arg, ":")
-		target := Target{File: &file}
+		var target Target
+		if file != "" {
+			target.File = &file
+		}
+
 		if hasID {
 			target.ID = &id
 		}
@@ -202,4 +206,4 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 
 // Hello world.
 
-//LINT.END :id00
+//LINT.END id00

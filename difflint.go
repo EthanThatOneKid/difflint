@@ -74,7 +74,7 @@ func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
 
 //LINT.IF ./lex.go:id00
 
-//LINT.END :id01
+//LINT.END id01
 
 // Hunk represents a diff hunk that must be present in the diff.
 type Hunk struct {
@@ -103,7 +103,7 @@ type LintResult struct {
 // Lint lints the given hunks against the given rules and returns the result.
 func Lint(o LintOptions) (*LintResult, error) {
 	// Parse the diff hunks.
-	hunks, err := ParseHunks(o.Reader)
+	hunks, err := ParseHunks(o.Reader, o.Include, o.Exclude)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse diff hunks")
 	}
@@ -116,7 +116,9 @@ func Lint(o LintOptions) (*LintResult, error) {
 
 	// Analyze the rules.
 	if errs := Analyze(rulesMap); len(errs) > 0 {
-		return nil, errors.Errorf("analysis errors: %v", errs)
+		for _, err := range errs {
+			log.Printf("error: %s", err)
+		}
 	}
 
 	// Collect the rules that are not satisfied.
@@ -129,21 +131,19 @@ func Lint(o LintOptions) (*LintResult, error) {
 }
 
 // TargetKey returns the key for the given target.
-// TODO: Make this more consistent so that the Analyze function can work.
 func TargetKey(pathname string, target Target) string {
-	targetKey := pathname
 	if target.File != nil && *target.File != "" {
-		targetKey = *target.File
-		if !filepath.IsAbs(targetKey) {
-			targetKey = filepath.Join(filepath.Dir(pathname), targetKey)
+		pathname = *target.File
+		if !filepath.IsAbs(pathname) {
+			pathname = filepath.Join(filepath.Dir(pathname), pathname)
 		}
 	}
 
 	if target.ID != nil {
-		targetKey += ":" + *target.ID
+		pathname += ":" + *target.ID
 	}
 
-	return targetKey
+	return filepath.Clean(pathname)
 }
 
 // Analyze analyzes the rules and returns a list of errors.
@@ -155,16 +155,17 @@ func Analyze(rulesMap map[string][]Rule) []error {
 	targets := make(map[string]struct{})
 	for pathname, rules := range rulesMap {
 		for _, rule := range rules {
-			targets[pathname] = struct{}{}
-			if rule.ID == nil || *rule.ID == "" {
+			targets[TargetKey(pathname, Target{})] = struct{}{}
+			if rule.ID == nil {
 				continue
 			}
 
 			targetKey := TargetKey(pathname, Target{ID: rule.ID})
-			println("targetKey1", targetKey)
 			targets[targetKey] = struct{}{}
 		}
 	}
+
+	// TODO: Check for duplicate targets on a single rule.
 
 	// Iterate through the entire map of rules again to find all the rules with targets that don't exist.
 	for pathname, rules := range rulesMap {
@@ -172,8 +173,7 @@ func Analyze(rulesMap map[string][]Rule) []error {
 			for _, target := range rule.Targets {
 				targetKey := TargetKey(pathname, target)
 				if _, ok := targets[targetKey]; !ok {
-					println("targetKey2", targetKey)
-					errs = append(errs, errors.Errorf("rule %s:L%d-L%d has non-existent target %q", pathname, rule.Hunk.Range.Start, rule.Hunk.Range.End, targetKey))
+					errs = append(errs, errors.Errorf("rule (%s:%d,%s:%d) targets non-existent %s", pathname, rule.Hunk.Range.Start, pathname, rule.Hunk.Range.End, targetKey))
 				}
 			}
 		}
@@ -292,7 +292,7 @@ func Do(r io.Reader, include, exclude []string) error {
 
 // ParseHunks parses the input diff and returns the extracted file paths along
 // with associated line number ranges.
-func ParseHunks(r io.Reader) ([]Hunk, error) {
+func ParseHunks(r io.Reader, include, exclude []string) ([]Hunk, error) {
 	diffs, err := diff.NewMultiFileDiffReader(r).ReadAllFiles()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read files")
@@ -302,7 +302,7 @@ func ParseHunks(r io.Reader) ([]Hunk, error) {
 	for _, d := range diffs {
 		for _, h := range d.Hunks {
 			hunk := Hunk{
-				File: d.NewName,
+				File: strings.TrimPrefix(d.NewName, "b/"),
 				Range: Range{
 					Start: h.NewStartLine,
 					End:   h.NewStartLine + h.NewLines - 1,
@@ -312,4 +312,36 @@ func ParseHunks(r io.Reader) ([]Hunk, error) {
 	}
 
 	return hunks, nil
+}
+
+// Include determines if a given diff should be included in the linting process.
+func Include(pathname string, include, exclude []string) (bool, error) {
+	// If there are no include or exclude rules, return true.
+	if len(include) == 0 && len(exclude) == 0 {
+		return true, nil
+	}
+
+	// If there are exclude rules, check if the diff matches any of them.
+	if len(exclude) > 0 {
+		for _, e := range exclude {
+			if matched, err := filepath.Match(e, pathname); err != nil {
+				return false, errors.Wrap(err, "failed to match exclude rule")
+			} else if matched {
+				return false, nil
+			}
+		}
+	}
+
+	// If there are include rules, check if the diff matches any of them.
+	if len(include) > 0 {
+		for _, i := range include {
+			if matched, err := filepath.Match(i, pathname); err != nil {
+				return false, errors.Wrap(err, "failed to match include rule")
+			} else if matched {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
