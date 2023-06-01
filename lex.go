@@ -195,3 +195,5 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 
 	return targets, nil
 }
+
+// This change does not affect the given target because we have a bug. The bug is that we cannot read any files that are not included in the hunk, so the files in the rules must be recursively read.
