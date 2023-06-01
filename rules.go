@@ -34,10 +34,13 @@ type Rule struct {
 
 // RulesMapFromHunks parses rules from the given hunks by file name and
 // returns the map of rules.
-func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, error) {
-	// Separate hunks by file name.
+func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, map[string]struct{}, error) {
+	// Separate hunks by file name and construct a set of all the
+	// target keys that exist.
+	targetsMap := make(map[string]struct{}, len(hunks))
 	rangesMap := make(map[string][]Range, len(hunks))
 	for _, hunk := range hunks {
+		targetsMap[TargetKey(hunk.File, Target{})] = struct{}{}
 		if _, ok := rangesMap[hunk.File]; ok {
 			rangesMap[hunk.File] = append(rangesMap[hunk.File], hunk.Range)
 			continue
@@ -48,61 +51,40 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, er
 
 	// Populate rules map.
 	rulesMap := make(map[string][]Rule, len(hunks))
-	for filepath, ranges := range rangesMap {
+	for pathname, ranges := range rangesMap {
 		// Parse rules for the file.
-		log.Println("Parsing rules for file", filepath)
-		file, err := os.Open(filepath)
+		log.Println("Parsing rules for file", pathname)
+		file, err := os.Open(pathname)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to open file %s", filepath)
+			return nil, nil, errors.Wrapf(err, "failed to open file %s", pathname)
 		}
 
 		defer file.Close()
 
-		templates, err := options.TemplatesFromFile(filepath)
+		templates, err := options.TemplatesFromFile(pathname)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse templates for file %s", filepath)
+			return nil, nil, errors.Wrapf(err, "failed to parse templates for file %s", pathname)
 		}
 
 		tokens, err := lex(file, lexOptions{
-			file:      filepath,
+			file:      pathname,
 			templates: templates,
 		})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to lex file %s", filepath)
+			return nil, nil, errors.Wrapf(err, "failed to lex file %s", pathname)
 		}
 
-		rules, err := parseRules(filepath, tokens, ranges)
+		rules, err := parseRules(pathname, tokens, ranges)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse rules for file %s", filepath)
+			return nil, nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
 		}
 
-		rulesMap[filepath] = rules
+		for _, rule := range rules {
+			targetsMap[TargetKey(pathname, Target{ID: rule.ID})] = struct{}{}
+		}
+
+		rulesMap[pathname] = rules
 	}
 
-	return rulesMap, nil
+	return rulesMap, targetsMap, nil
 }
-
-// // ReadA reads the file with the given name from the a/ directory.
-// func ReadA(oldName string) (*os.File, error) {
-// 	return ReadFile(oldName, "a/")
-// }
-
-// // ReadB reads the file with the given name from the b/ directory.
-// func ReadB(newName string) (*os.File, error) {
-// 	return ReadFile(newName, "b/")
-// }
-
-// // ReadFile reads the file with the given name from the given prefix.
-// func ReadFile(prefixedFile, prefix string) (*os.File, error) {
-// 	if !strings.HasPrefix(prefixedFile, prefix) {
-// 		return nil, fmt.Errorf("unexpected file name: %s", prefixedFile)
-// 	}
-
-// 	relativePath := strings.TrimPrefix(prefixedFile, prefix)
-// 	f, err := os.Open(relativePath)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("unexpected to open file %s: %v", prefixedFile, err)
-// 	}
-
-// 	return f, nil
-// }

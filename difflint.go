@@ -1,7 +1,6 @@
 package difflint
 
 import (
-	"encoding/json"
 	"io"
 	"log"
 	"path/filepath"
@@ -17,10 +16,10 @@ import (
 // Range represents a range of line numbers.
 type Range struct {
 	// Start line number.
-	Start int32
+	Start int
 
 	// End line number.
-	End int32
+	End int
 }
 
 // Intersects returns true if the given ranges intersect.
@@ -43,10 +42,10 @@ type LintOptions struct {
 	Templates []string // []string{"//LINT.?", "#LINT.?", "<!-- LINT.? -->"}
 
 	// FileExtMap is a map of file extensions to directive templates.
-	FileExtMap map[string][]int32 // map[string][]int32{".go": []int32{0}, ".py": []int32{1}}
+	FileExtMap map[string][]int // map[string][]int{".go": []int{0}, ".py": []int{1}}
 
 	// DefaultTemplate is the default directive template.
-	DefaultTemplate int32
+	DefaultTemplate int
 }
 
 // TemplatesFromFile returns the directive templates for the given file type.
@@ -72,10 +71,6 @@ func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
 	return filteredTemplates, nil
 }
 
-//LINT.IF ./lex.go:id00
-
-//LINT.END id01
-
 // Hunk represents a diff hunk that must be present in the diff.
 type Hunk struct {
 	// File specifier of the defined range.
@@ -91,7 +86,7 @@ type UnsatisfiedRule struct {
 	Rule
 
 	// UnsatisfiedTargets is the list of target indices that are not satisfied.
-	UnsatisfiedTargets []int32
+	UnsatisfiedTargets map[int]struct{}
 }
 
 // Result of a linting operation.
@@ -109,13 +104,13 @@ func Lint(o LintOptions) (*LintResult, error) {
 	}
 
 	// Parse rules from hunks.
-	rulesMap, err := RulesMapFromHunks(hunks, o)
+	rulesMap, targetsMap, err := RulesMapFromHunks(hunks, o)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
 	// Analyze the rules.
-	if errs := Analyze(rulesMap); len(errs) > 0 {
+	if errs := Analyze(rulesMap, targetsMap); len(errs) > 0 {
 		for _, err := range errs {
 			log.Printf("error: %s", err)
 		}
@@ -132,38 +127,38 @@ func Lint(o LintOptions) (*LintResult, error) {
 
 // TargetKey returns the key for the given target.
 func TargetKey(pathname string, target Target) string {
+	key := string(pathname)
 	if target.File != nil && *target.File != "" {
-		pathname = *target.File
-		if !filepath.IsAbs(pathname) {
-			pathname = filepath.Join(filepath.Dir(pathname), pathname)
+		key = *target.File
+		if isRelativeToCurrentDirectory(*target.File) {
+			key = filepath.Join(filepath.Dir(pathname), *target.File)
 		}
 	}
 
 	if target.ID != nil {
-		pathname += ":" + *target.ID
+		key += ":" + *target.ID
 	}
 
-	return filepath.Clean(pathname)
+	return filepath.Clean(key)
+}
+
+// isRelativeToCurrentDirectory returns true if the given path is a specific relative path.
+// A specific relative path implies that the user specifically intends to target a
+// path relative to the current directory.
+func isRelativeToCurrentDirectory(path string) bool {
+	// Check if the path is a relative path
+	if !strings.HasPrefix(path, "/") {
+		// Check if the path starts with "./" or "../"
+		return strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../")
+	}
+
+	return false
 }
 
 // Analyze analyzes the rules and returns a list of errors.
-func Analyze(rulesMap map[string][]Rule) []error {
+func Analyze(rulesMap map[string][]Rule, targetsMap map[string]struct{}) []error {
 	// Append an error for each rule that has a non-existent target.
 	var errs []error
-
-	// Construct a set of all the targets that exist.
-	targets := make(map[string]struct{})
-	for pathname, rules := range rulesMap {
-		for _, rule := range rules {
-			targets[TargetKey(pathname, Target{})] = struct{}{}
-			if rule.ID == nil {
-				continue
-			}
-
-			targetKey := TargetKey(pathname, Target{ID: rule.ID})
-			targets[targetKey] = struct{}{}
-		}
-	}
 
 	// TODO: Check for duplicate targets on a single rule.
 
@@ -172,7 +167,7 @@ func Analyze(rulesMap map[string][]Rule) []error {
 		for _, rule := range rules {
 			for _, target := range rule.Targets {
 				targetKey := TargetKey(pathname, target)
-				if _, ok := targets[targetKey]; !ok {
+				if _, ok := targetsMap[targetKey]; !ok {
 					errs = append(errs, errors.Errorf("rule (%s:%d,%s:%d) targets non-existent %s", pathname, rule.Hunk.Range.Start, pathname, rule.Hunk.Range.End, targetKey))
 				}
 			}
@@ -203,7 +198,7 @@ func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 
 					// Given that ruleA is present and ruleB is not present, check if ruleA
 					// is satisfied by ruleB.
-					unsatisfiedTargetIndices := make([]int32, 0, len(ruleA.Targets))
+					unsatisfiedTargetIndices := make(map[int]struct{})
 					for k, target := range ruleA.Targets {
 						// ruleA is satisfied by ruleB if ruleB matches a target of ruleA.
 						satisfied := target.ID == ruleB.ID && ((target.File == nil && pathnameA == pathnameB) || (*target.File == pathnameB))
@@ -211,7 +206,8 @@ func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 							continue inner
 						}
 
-						unsatisfiedTargetIndices = append(unsatisfiedTargetIndices, int32(k))
+						// Otherwise, add the target index to the list of unsatisfied targets.
+						unsatisfiedTargetIndices[k] = struct{}{}
 					}
 
 					unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
@@ -242,7 +238,7 @@ func Do(r io.Reader, include, exclude []string) error {
 			"<!--LINT.?",
 			"'LINT.?",
 		},
-		FileExtMap: map[string][]int32{
+		FileExtMap: map[string][]int{
 			"py":       {0},
 			"sh":       {0},
 			"go":       {1},
@@ -279,16 +275,31 @@ func Do(r io.Reader, include, exclude []string) error {
 
 	// Print the unsatisfied rules.
 	for _, rule := range result.UnsatisfiedRules {
-		// Print the unsatisfied rule.
-		output, err := json.MarshalIndent(rule, "", "  ")
-		if err != nil {
-			return errors.Wrap(err, "failed to marshal result")
+		// Skip if the rule is not intended to be included in the output.
+		if ok, err := Include(rule.Hunk.File, include, exclude); err != nil {
+			return errors.Wrap(err, "failed to check if file is included")
+		} else if !ok {
+			continue
 		}
-		log.Println("Unsatisfied rule:", string(output))
+
+		// Print the unsatisfied rule.
+		log.Printf("Rule (%s:%d,%s:%d) unsatisfied", rule.Rule.Hunk.File, rule.Rule.Hunk.Range.Start, rule.Rule.Hunk.File, rule.Rule.Hunk.Range.End)
+
+		// Print the unsatisfied target keys.
+		for i, target := range rule.Targets {
+			if _, ok := rule.UnsatisfiedTargets[i]; !ok {
+				continue
+			}
+
+			key := TargetKey(rule.Hunk.File, target)
+			log.Printf("  %s", key)
+		}
 	}
 
 	return nil
 }
+
+//LINT.IF lex.go
 
 // ParseHunks parses the input diff and returns the extracted file paths along
 // with associated line number ranges.
@@ -304,8 +315,8 @@ func ParseHunks(r io.Reader, include, exclude []string) ([]Hunk, error) {
 			hunk := Hunk{
 				File: strings.TrimPrefix(d.NewName, "b/"),
 				Range: Range{
-					Start: h.NewStartLine,
-					End:   h.NewStartLine + h.NewLines - 1,
+					Start: int(h.NewStartLine),
+					End:   int(h.NewStartLine + h.NewLines - 1),
 				}}
 			hunks = append(hunks, hunk)
 		}
@@ -313,6 +324,8 @@ func ParseHunks(r io.Reader, include, exclude []string) ([]Hunk, error) {
 
 	return hunks, nil
 }
+
+//LINT.END
 
 // Include determines if a given diff should be included in the linting process.
 func Include(pathname string, include, exclude []string) (bool, error) {

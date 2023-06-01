@@ -12,21 +12,15 @@ type token struct {
 	directive directive
 	args      []string // ["IF", "test.go:ID"] or ["END", "id"]
 
-	line int32 // Line number of the token.
+	line int // Line number of the token.
 }
 
 type directive string
-
-//LINT.IF :id00
 
 const (
 	directiveIf  directive = "IF"
 	directiveEnd directive = "END"
 )
-
-// Hello world.
-
-//LINT.END id01
 
 type lexOptions struct {
 	// file is specifier that is being linted.
@@ -42,7 +36,7 @@ func lex(r io.Reader, options lexOptions) ([]token, error) {
 	var tokens []token
 
 	// lineCount is the current line number.
-	var lineCount int32
+	var lineCount int
 
 	// Read the file line by line.
 	scanner := bufio.NewScanner(r)
@@ -71,7 +65,7 @@ func lex(r io.Reader, options lexOptions) ([]token, error) {
 }
 
 // parseToken parses the given line and returns the token if it is a directive.
-func parseToken(line string, lineNumber int32, templates []string) (*token, bool, error) {
+func parseToken(line string, lineNumber int, templates []string) (*token, bool, error) {
 	for _, template := range templates {
 		prefix, suffix, found := strings.Cut(template, "?")
 		if !found {
@@ -201,9 +195,3 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 
 	return targets, nil
 }
-
-//LINT.IF :id00
-
-// Hello world.
-
-//LINT.END id00
