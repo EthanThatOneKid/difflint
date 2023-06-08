@@ -3,6 +3,7 @@ package difflint
 import (
 	"log"
 	"os"
+	"sync"
 
 	"github.com/pkg/errors"
 )
@@ -35,8 +36,7 @@ type Rule struct {
 // RulesMapFromHunks parses rules from the given hunks by file name and
 // returns the map of rules.
 func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, map[string]struct{}, error) {
-	// Separate hunks by file name and construct a set of all the
-	// target keys that exist.
+	// Separate hunks by file name and construct a set of all the target keys that exist.
 	targetsMap := make(map[string]struct{}, len(hunks))
 	rangesMap := make(map[string][]Range, len(hunks))
 	for _, hunk := range hunks {
@@ -51,30 +51,10 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 
 	// Populate rules map.
 	rulesMap := make(map[string][]Rule, len(hunks))
+	visited := make(map[string]struct{})
+	var wg sync.WaitGroup
 	for pathname, ranges := range rangesMap {
-		// Parse rules for the file.
-		log.Println("Parsing rules for file", pathname)
-		file, err := os.Open(pathname)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to open file %s", pathname)
-		}
-
-		defer file.Close()
-
-		templates, err := options.TemplatesFromFile(pathname)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to parse templates for file %s", pathname)
-		}
-
-		tokens, err := lex(file, lexOptions{
-			file:      pathname,
-			templates: templates,
-		})
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to lex file %s", pathname)
-		}
-
-		rules, err := parseRules(pathname, tokens, ranges)
+		rules, err := RulesFromFile(pathname, ranges, visited, &wg, options)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
 		}
@@ -86,5 +66,64 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 		rulesMap[pathname] = rules
 	}
 
+	wg.Wait()
+
 	return rulesMap, targetsMap, nil
+}
+
+func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{}, wg *sync.WaitGroup, options LintOptions) ([]Rule, error) {
+	visited[pathname] = struct{}{}
+
+	// Parse rules for the file.
+	log.Println("Parsing rules for file", pathname)
+	file, err := os.Open(pathname)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to open file %s", pathname)
+	}
+
+	defer file.Close()
+
+	templates, err := options.TemplatesFromFile(pathname)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse templates for file %s", pathname)
+	}
+
+	tokens, err := lex(file, lexOptions{
+		file:      pathname,
+		templates: templates,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to lex file %s", pathname)
+	}
+
+	rules, err := parseRules(pathname, tokens, ranges)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
+	}
+
+	for _, rule := range rules {
+		for _, target := range rule.Targets {
+			if target.File == nil {
+				continue
+			}
+
+			wg.Add(1)
+			go func(pathname string) {
+				defer wg.Done()
+
+				if _, ok := visited[pathname]; ok {
+					return
+				}
+
+				moreRules, err := RulesFromFile(pathname, nil, visited, wg, options)
+				if err != nil {
+					return
+				}
+
+				rules = append(rules, moreRules...)
+			}(*target.File)
+		}
+	}
+
+	return rules, nil
 }

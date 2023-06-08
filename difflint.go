@@ -274,8 +274,6 @@ func Do(r io.Reader, include, exclude []string) error {
 	return nil
 }
 
-//LINT.IF lex.go
-
 // ParseHunks parses the input diff and returns the extracted file paths along
 // with associated line number ranges.
 func ParseHunks(r io.Reader, include, exclude []string) ([]Hunk, error) {
@@ -299,8 +297,6 @@ func ParseHunks(r io.Reader, include, exclude []string) ([]Hunk, error) {
 
 	return hunks, nil
 }
-
-//LINT.END
 
 // Include determines if a given diff should be included in the linting process.
 func Include(pathname string, include, exclude []string) (bool, error) {
