@@ -103,10 +103,6 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse diff hunks")
 	}
 
-	// TODO:
-	// If the rulesMap contains any rules without a match in the rulesMap, then
-	// recursively add rules for those files.
-
 	// Parse rules from hunks.
 	rulesMap, _, err := RulesMapFromHunks(hunks, o)
 	if err != nil {
