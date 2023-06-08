@@ -16,6 +16,46 @@ go get -u github.com/EthanThatOneKid/difflint
 difflint --help
 ```
 
+### Single file
+
+```py
+# File: ./main.py
+
+#LINT.IF
+
+print("Edit me first!")
+
+#LINT.END bar
+
+#LINT.IF :bar
+
+print("Edit me second!")
+
+#LINT.END
+```
+
+### Multiple files
+
+```py
+# File ./foo.py
+
+#LINT.IF
+
+print("Edit me first!")
+
+#LINT.END bar
+```
+
+```py
+# File: ./main.py
+
+#LINT.IF ./foo.py:bar
+
+print("Edit me second!")
+
+#LINT.END
+```
+
 ## Development
 
 Run the tool from source with the Go toolchain:
