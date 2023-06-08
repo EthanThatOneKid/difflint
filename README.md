@@ -56,6 +56,35 @@ print("Edit me second!")
 #LINT.END
 ```
 
+### Exhaustive switch statement
+
+In programming languages lacking a comprehensive match statement for enumerations, our only option is to verify whether the switch statement aligns with the enumerated type.
+
+```ts
+//LINT.IF
+
+enum Thing {
+  ONE = 1,
+  TWO = 2,
+}
+
+//LINT.END :thing_enum
+
+//LINT.IF :thing_enum
+
+switch (thing) {
+  case Thing.ONE: {
+    return doThingOne();
+  }
+
+  case Thing.TWO: {
+    return doThingTwo();
+  }
+}
+
+//LINT.END
+```
+
 ## Development
 
 Run the tool from source with the Go toolchain:
