@@ -69,8 +69,9 @@ func NewApp() *App {
 func action(ctx *cli.Context) error {
 	include := ctx.StringSlice("include")
 	exclude := ctx.StringSlice("exclude")
+	extMapPath := ctx.String("extmap")
 
-	if err := difflint.Do(ctx.App.Reader, include, exclude); err != nil {
+	if err := difflint.Do(ctx.App.Reader, include, exclude, &extMapPath); err != nil {
 		return err
 	}
 
