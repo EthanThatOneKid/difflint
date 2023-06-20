@@ -41,6 +41,11 @@ func NewApp() *App {
 				Usage:    "exclude files matching the given glob",
 				Required: false,
 			},
+			&cli.PathFlag{
+				Name:     "ext_map",
+				Usage:    "path to file extension map[string][]string (see README.md for format)",
+				Required: false,
+			},
 			&cli.BoolFlag{
 				Name:     "verbose",
 				Usage:    "enable verbose logging",
@@ -69,7 +74,7 @@ func NewApp() *App {
 func action(ctx *cli.Context) error {
 	include := ctx.StringSlice("include")
 	exclude := ctx.StringSlice("exclude")
-	extMapPath := ctx.String("extmap")
+	extMapPath := ctx.String("ext_map")
 
 	if err := difflint.Do(ctx.App.Reader, include, exclude, &extMapPath); err != nil {
 		return err
