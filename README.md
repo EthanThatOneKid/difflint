@@ -85,6 +85,20 @@ switch (thing) {
 //LINT.END
 ```
 
+### Custom file extensions
+
+```bash
+git diff | difflint --ext_map="difflint.json"
+```
+
+#### `difflint.json`
+
+```json
+{
+  "yaml": ["#LINT.?"]
+}
+```
+
 ## Development
 
 Run the tool from source with the Go toolchain:

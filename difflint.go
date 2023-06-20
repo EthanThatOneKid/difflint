@@ -11,8 +11,6 @@ import (
 	"github.com/sourcegraph/go-diff/diff"
 )
 
-// Hello world
-
 // Range represents a range of line numbers.
 type Range struct {
 	// Start line number.
@@ -57,7 +55,7 @@ func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
 
 	templateIndices, ok := o.FileExtMap[fileType]
 	if !ok {
-		return nil, errors.Errorf("no directive template found for file type %q", fileType)
+		templateIndices = []int{o.DefaultTemplate}
 	}
 
 	var filteredTemplates []string
@@ -195,45 +193,18 @@ func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 }
 
 // Entrypoint for the difflint command.
-func Do(r io.Reader, include, exclude []string) error {
+func Do(r io.Reader, include, exclude []string, extMapPath string) error {
+	// Parse options.
+	extMap := NewExtMap(extMapPath)
+
 	// Lint the hunks.
 	result, err := Lint(LintOptions{
 		Reader:          r,
 		Include:         include,
 		Exclude:         exclude,
 		DefaultTemplate: 0,
-		Templates: []string{
-			"#LINT.?",
-			"//LINT.?",
-			"/*LINT.?",
-			"<!--LINT.?",
-			"'LINT.?",
-		},
-		FileExtMap: map[string][]int{
-			"py":       {0},
-			"sh":       {0},
-			"go":       {1},
-			"js":       {1, 2},
-			"jsx":      {1, 2},
-			"mjs":      {1, 2},
-			"ts":       {1, 2},
-			"tsx":      {1, 2},
-			"jsonc":    {1, 2},
-			"c":        {1, 2},
-			"cc":       {1, 2},
-			"cpp":      {1, 2},
-			"h":        {1, 2},
-			"hpp":      {1, 2},
-			"java":     {1},
-			"rs":       {1},
-			"swift":    {1},
-			"svelte":   {1, 2, 3},
-			"css":      {2},
-			"html":     {3},
-			"md":       {3},
-			"markdown": {3},
-			"bas":      {4},
-		},
+		Templates:       extMap.Templates,
+		FileExtMap:      extMap.FileExtMap,
 	})
 	if err != nil {
 		return errors.Wrap(err, "failed to lint hunks")
