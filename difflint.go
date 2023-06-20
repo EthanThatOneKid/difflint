@@ -55,7 +55,7 @@ func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
 
 	templateIndices, ok := o.FileExtMap[fileType]
 	if !ok {
-		return nil, errors.Errorf("no directive template found for file type %q", fileType)
+		templateIndices = []int{o.DefaultTemplate}
 	}
 
 	var filteredTemplates []string
