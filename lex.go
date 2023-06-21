@@ -118,27 +118,17 @@ func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 				return nil, errors.New("unexpected IF directive at " + file + ":" + string(rune(token.line)))
 			}
 
-			r.Hunk.File = file
-			r.Hunk.Range = Range{Start: token.line}
-
-			// Print the args.
-			// println("args:")
-			// if r.ID != nil {
-			// 	println("id:", *r.ID)
-			// }
-			// for _, arg := range token.args {
-			// 	println(arg)
-			// }
-
 			targets, err := parseTargets(parseTargetsOptions{
 				args:           token.args,
-				allowEmptyArgs: r.ID != nil,
+				allowEmptyArgs: true,
 			})
 			if err != nil {
 				return nil, err
 			}
 
 			r.Targets = targets
+			r.Hunk.File = file
+			r.Hunk.Range = Range{Start: token.line}
 
 		case directiveEnd:
 			if r.Hunk.File == "" {

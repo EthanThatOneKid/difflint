@@ -71,6 +71,7 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 	return rulesMap, targetsMap, nil
 }
 
+// RulesFromFile parses rules from the given file and returns the list of rules.
 func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{}, wg *sync.WaitGroup, options LintOptions) ([]Rule, error) {
 	visited[pathname] = struct{}{}
 
@@ -127,7 +128,3 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 
 	return rules, nil
 }
-
-//LINT.IF
-
-//LINT.END id
