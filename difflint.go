@@ -107,6 +107,9 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
+	// TODO: This is for testing. Delete this.
+	log.Println("rulesMap:", rulesMap)
+
 	// Collect the rules that are not satisfied.
 	unsatisfiedRules, err := Check(rulesMap)
 	if err != nil {

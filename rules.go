@@ -126,5 +126,11 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 		}
 	}
 
+	// Print every rule.
+	for _, rule := range rules {
+		log.Println("Parsed rule:", rule)
+	}
+	// TODO: This is for testing. Delete this.
+
 	return rules, nil
 }
