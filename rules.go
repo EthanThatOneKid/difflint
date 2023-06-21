@@ -130,11 +130,6 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 	// Wait for all inner goroutines to complete before returning.
 	innerWg.Wait()
 
-	// Print every rule.
-	for _, rule := range rules {
-		log.Println("Parsed rule:", rule)
-	}
-	// TODO: This is for testing. Delete this.
-
+	// Add rules to the map.
 	return rules, nil
 }
