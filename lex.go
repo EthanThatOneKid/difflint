@@ -118,18 +118,17 @@ func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 				return nil, errors.New("unexpected IF directive at " + file + ":" + string(rune(token.line)))
 			}
 
-			r.Hunk.File = file
-			r.Hunk.Range = Range{Start: token.line}
-
 			targets, err := parseTargets(parseTargetsOptions{
-				args:       token.args,
-				allowEmpty: r.ID != nil,
+				args:           token.args,
+				allowEmptyArgs: true,
 			})
 			if err != nil {
 				return nil, err
 			}
 
 			r.Targets = targets
+			r.Hunk.File = file
+			r.Hunk.Range = Range{Start: token.line}
 
 		case directiveEnd:
 			if r.Hunk.File == "" {
@@ -168,13 +167,13 @@ func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 
 // parseTargets parses the given list of targets and returns the list of targets.
 type parseTargetsOptions struct {
-	args       []string
-	allowEmpty bool
+	args           []string
+	allowEmptyArgs bool
 }
 
 // parseTargets parses the given list of targets and returns the list of targets.
 func parseTargets(o parseTargetsOptions) ([]Target, error) {
-	if !o.allowEmpty && len(o.args) == 0 {
+	if !o.allowEmptyArgs && len(o.args) == 0 {
 		return nil, errors.New("missing target")
 	}
 

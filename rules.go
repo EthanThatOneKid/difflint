@@ -56,7 +56,7 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 	for pathname, ranges := range rangesMap {
 		rules, err := RulesFromFile(pathname, ranges, visited, &wg, options)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
+			return nil, nil, err
 		}
 
 		for _, rule := range rules {
@@ -71,6 +71,7 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 	return rulesMap, targetsMap, nil
 }
 
+// RulesFromFile parses rules from the given file and returns the list of rules.
 func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{}, wg *sync.WaitGroup, options LintOptions) ([]Rule, error) {
 	visited[pathname] = struct{}{}
 
