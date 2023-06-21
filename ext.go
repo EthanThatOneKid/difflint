@@ -3,6 +3,7 @@ package difflint
 import (
 	"encoding/json"
 	"log"
+	"os"
 )
 
 var (
@@ -66,7 +67,12 @@ func NewExtMap(path string) *ExtMap {
 	if path != "" {
 		// Unmarshal the JSON file.
 		var extFile ExtFileJSON
-		if err := json.Unmarshal([]byte(path), &extFile); err != nil {
+		bytes, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatalf("error reading JSON file %q: %v", path, err)
+		}
+
+		if err := json.Unmarshal(bytes, &extFile); err != nil {
 			log.Fatalf("error unmarshaling JSON file %q: %v", path, err)
 		}
 

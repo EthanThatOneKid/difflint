@@ -56,7 +56,7 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 	for pathname, ranges := range rangesMap {
 		rules, err := RulesFromFile(pathname, ranges, visited, &wg, options)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
+			return nil, nil, err
 		}
 
 		for _, rule := range rules {
@@ -127,3 +127,7 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 
 	return rules, nil
 }
+
+//LINT.IF
+
+//LINT.END id

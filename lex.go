@@ -121,9 +121,18 @@ func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 			r.Hunk.File = file
 			r.Hunk.Range = Range{Start: token.line}
 
+			// Print the args.
+			// println("args:")
+			// if r.ID != nil {
+			// 	println("id:", *r.ID)
+			// }
+			// for _, arg := range token.args {
+			// 	println(arg)
+			// }
+
 			targets, err := parseTargets(parseTargetsOptions{
-				args:       token.args,
-				allowEmpty: r.ID != nil,
+				args:           token.args,
+				allowEmptyArgs: r.ID != nil,
 			})
 			if err != nil {
 				return nil, err
@@ -168,13 +177,13 @@ func parseRules(file string, tokens []token, ranges []Range) ([]Rule, error) {
 
 // parseTargets parses the given list of targets and returns the list of targets.
 type parseTargetsOptions struct {
-	args       []string
-	allowEmpty bool
+	args           []string
+	allowEmptyArgs bool
 }
 
 // parseTargets parses the given list of targets and returns the list of targets.
 func parseTargets(o parseTargetsOptions) ([]Target, error) {
-	if !o.allowEmpty && len(o.args) == 0 {
+	if !o.allowEmptyArgs && len(o.args) == 0 {
 		return nil, errors.New("missing target")
 	}
 
