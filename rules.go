@@ -102,21 +102,22 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 		return nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
 	}
 
+	var innerWg sync.WaitGroup // WaitGroup for inner goroutines
 	for _, rule := range rules {
 		for _, target := range rule.Targets {
 			if target.File == nil {
 				continue
 			}
 
-			wg.Add(1)
+			innerWg.Add(1)
 			go func(pathname string) {
-				defer wg.Done()
+				defer innerWg.Done()
 
 				if _, ok := visited[pathname]; ok {
 					return
 				}
 
-				moreRules, err := RulesFromFile(pathname, nil, visited, wg, options)
+				moreRules, err := RulesFromFile(pathname, nil, visited, &innerWg, options)
 				if err != nil {
 					return
 				}
@@ -126,5 +127,9 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 		}
 	}
 
+	// Wait for all inner goroutines to complete before returning.
+	innerWg.Wait()
+
+	// Add rules to the map.
 	return rules, nil
 }
