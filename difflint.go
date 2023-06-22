@@ -1,8 +1,8 @@
 package difflint
 
 import (
+	"fmt"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
 
@@ -87,10 +87,39 @@ type UnsatisfiedRule struct {
 	UnsatisfiedTargets map[int]struct{}
 }
 
+type UnsatisfiedRules []UnsatisfiedRule
+
+// String returns a string representation of the unsatisfied rules.
+func (r *UnsatisfiedRules) String() string {
+	var b strings.Builder
+	for _, rule := range *r {
+		b.WriteString("rule (")
+		b.WriteString(rule.Rule.Hunk.File)
+		b.WriteString(":")
+		b.WriteString(fmt.Sprintf("%d", rule.Rule.Hunk.Range.Start))
+		b.WriteString(",")
+		b.WriteString(rule.Rule.Hunk.File)
+		b.WriteString(":")
+		b.WriteString(fmt.Sprintf("%d", rule.Rule.Hunk.Range.End))
+		b.WriteString(") not satisfied for targets:\n")
+		for i, target := range rule.Targets {
+			if _, ok := rule.UnsatisfiedTargets[i]; !ok {
+				continue
+			}
+
+			key := TargetKey(rule.Rule.Hunk.File, target)
+			b.WriteString("  ")
+			b.WriteString(key)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
 // Result of a linting operation.
 type LintResult struct {
 	// List of rules that were not satisfied.
-	UnsatisfiedRules []UnsatisfiedRule
+	UnsatisfiedRules UnsatisfiedRules
 }
 
 // Lint lints the given hunks against the given rules and returns the result.
@@ -193,7 +222,7 @@ func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 }
 
 // Entrypoint for the difflint command.
-func Do(r io.Reader, include, exclude []string, extMapPath string) ([]UnsatisfiedRule, error) {
+func Do(r io.Reader, include, exclude []string, extMapPath string) (UnsatisfiedRules, error) {
 	// Parse options.
 	extMap := NewExtMap(extMapPath)
 
@@ -216,25 +245,16 @@ func Do(r io.Reader, include, exclude []string, extMapPath string) ([]Unsatisfie
 	}
 
 	// Print the unsatisfied rules.
+	var included bool
 	for _, rule := range result.UnsatisfiedRules {
 		// Skip if the rule is not intended to be included in the output.
-		if ok, err := Include(rule.Hunk.File, include, exclude); err != nil {
+		included, err = Include(rule.Hunk.File, include, exclude)
+		if err != nil {
 			return nil, errors.Wrap(err, "failed to check if file is included")
-		} else if !ok {
-			continue
 		}
 
-		// Print the unsatisfied rule.
-		log.Printf("Rule (%s:%d,%s:%d) unsatisfied", rule.Rule.Hunk.File, rule.Rule.Hunk.Range.Start, rule.Rule.Hunk.File, rule.Rule.Hunk.Range.End)
-
-		// Print the unsatisfied target keys.
-		for i, target := range rule.Targets {
-			if _, ok := rule.UnsatisfiedTargets[i]; !ok {
-				continue
-			}
-
-			key := TargetKey(rule.Hunk.File, target)
-			log.Printf("  %s", key)
+		if !included {
+			continue
 		}
 	}
 

@@ -82,7 +82,7 @@ func action(ctx *cli.Context) error {
 	}
 
 	if len(unsatisfiedRules) > 0 {
-		return cli.Exit("Lint failed", 1)
+		return cli.Exit(unsatisfiedRules.String(), 1)
 	}
 
 	return nil
