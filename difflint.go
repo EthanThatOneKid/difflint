@@ -142,7 +142,22 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to check rules")
 	}
 
-	return &LintResult{UnsatisfiedRules: unsatisfiedRules}, nil
+	// Filter out rules that are not intended to be included in the output.
+	filteredUnsatisfiedRules := make(UnsatisfiedRules, len(unsatisfiedRules))
+	for _, rule := range unsatisfiedRules {
+		included, err := Include(rule.Rule.Hunk.File, o.Include, o.Exclude)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to check if file is included")
+		}
+
+		if !included {
+			continue
+		}
+
+		filteredUnsatisfiedRules = append(filteredUnsatisfiedRules, rule)
+	}
+
+	return &LintResult{UnsatisfiedRules: filteredUnsatisfiedRules}, nil
 }
 
 // TargetKey returns the key for the given target.
@@ -237,25 +252,6 @@ func Do(r io.Reader, include, exclude []string, extMapPath string) (UnsatisfiedR
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to lint hunks")
-	}
-
-	// If there are no unsatisfied rules, return nil.
-	if len(result.UnsatisfiedRules) == 0 {
-		return nil, nil
-	}
-
-	// Print the unsatisfied rules.
-	var included bool
-	for _, rule := range result.UnsatisfiedRules {
-		// Skip if the rule is not intended to be included in the output.
-		included, err = Include(rule.Hunk.File, include, exclude)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to check if file is included")
-		}
-
-		if !included {
-			continue
-		}
 	}
 
 	return result.UnsatisfiedRules, nil
