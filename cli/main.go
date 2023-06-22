@@ -77,7 +77,7 @@ func action(ctx *cli.Context) error {
 	extMapPath := ctx.String("ext_map")
 
 	if err := difflint.Do(ctx.App.Reader, include, exclude, extMapPath); err != nil {
-		return err
+		log.Fatalln(err)
 	}
 
 	return nil
