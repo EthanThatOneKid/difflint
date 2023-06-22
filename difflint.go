@@ -176,8 +176,8 @@ func isRelativeToCurrentDirectory(path string) bool {
 }
 
 // Check returns the list of unsatisfied rules for the given map of rules.
-func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
-	var unsatisfiedRules []UnsatisfiedRule
+func Check(rulesMap map[string][]Rule) (UnsatisfiedRules, error) {
+	var unsatisfiedRules UnsatisfiedRules
 	for pathnameA, rulesA := range rulesMap {
 	outer:
 		for i, ruleA := range rulesA {
