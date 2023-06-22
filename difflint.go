@@ -193,7 +193,7 @@ func Check(rulesMap map[string][]Rule) ([]UnsatisfiedRule, error) {
 }
 
 // Entrypoint for the difflint command.
-func Do(r io.Reader, include, exclude []string, extMapPath string) error {
+func Do(r io.Reader, include, exclude []string, extMapPath string) ([]UnsatisfiedRule, error) {
 	// Parse options.
 	extMap := NewExtMap(extMapPath)
 
@@ -207,19 +207,19 @@ func Do(r io.Reader, include, exclude []string, extMapPath string) error {
 		FileExtMap:      extMap.FileExtMap,
 	})
 	if err != nil {
-		return errors.Wrap(err, "failed to lint hunks")
+		return nil, errors.Wrap(err, "failed to lint hunks")
 	}
 
 	// If there are no unsatisfied rules, return nil.
 	if len(result.UnsatisfiedRules) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Print the unsatisfied rules.
 	for _, rule := range result.UnsatisfiedRules {
 		// Skip if the rule is not intended to be included in the output.
 		if ok, err := Include(rule.Hunk.File, include, exclude); err != nil {
-			return errors.Wrap(err, "failed to check if file is included")
+			return nil, errors.Wrap(err, "failed to check if file is included")
 		} else if !ok {
 			continue
 		}
@@ -238,7 +238,7 @@ func Do(r io.Reader, include, exclude []string, extMapPath string) error {
 		}
 	}
 
-	return nil
+	return result.UnsatisfiedRules, nil
 }
 
 // ParseHunks parses the input diff and returns the extracted file paths along
