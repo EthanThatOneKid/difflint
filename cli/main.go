@@ -76,8 +76,13 @@ func action(ctx *cli.Context) error {
 	exclude := ctx.StringSlice("exclude")
 	extMapPath := ctx.String("ext_map")
 
-	if err := difflint.Do(ctx.App.Reader, include, exclude, extMapPath); err != nil {
+	unsatisfiedRules, err := difflint.Do(ctx.App.Reader, include, exclude, extMapPath)
+	if err != nil {
 		return err
+	}
+
+	if len(unsatisfiedRules) > 0 {
+		return cli.Exit(unsatisfiedRules.String(), 1)
 	}
 
 	return nil
