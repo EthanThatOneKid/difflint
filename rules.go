@@ -135,8 +135,8 @@ func RulesFromFile(file string, ranges []Range, options LintOptions) ([]Rule, er
 	return rules, nil
 }
 
-//LINT.IF lex.go:poop
+//LINT.IF lex.go
 
-// hello!
+// hello
 
-//LINT.END poop
+//LINT.END

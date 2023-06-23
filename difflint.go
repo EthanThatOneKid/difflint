@@ -138,6 +138,7 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
+	// TODO: Delete this.
 	data, err := json.MarshalIndent(rulesMap, "", "  ")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal rules map")
@@ -150,6 +151,7 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to check rules")
 	}
 
+	// TODO: Delete this.
 	data, err = json.MarshalIndent(unsatisfiedRules, "", "  ")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal rules map")
