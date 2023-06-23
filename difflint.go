@@ -257,7 +257,7 @@ func Check(rulesMap map[string][]Rule) (UnsatisfiedRules, error) {
 	return unsatisfiedRules, nil
 }
 
-// Entrypoint for the difflint command.
+// Do is the difflint command's entrypoint.
 func Do(r io.Reader, include, exclude []string, extMapPath string) (UnsatisfiedRules, error) {
 	// Parse options.
 	extMap := NewExtMap(extMapPath)
