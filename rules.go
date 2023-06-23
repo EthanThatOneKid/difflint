@@ -33,7 +33,7 @@ type Rule struct {
 }
 
 // RulesMapFromHunks parses rules from the given hunks by file name and
-// returns the map of rules.
+// returns the map of rules and the set of all the target keys that are present.
 func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, map[string]struct{}, error) {
 	// Separate hunks by file name and construct a set of all the target keys that exist.
 	targetsMap := make(map[string]struct{}, len(hunks))
@@ -93,10 +93,6 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 					continue
 				}
 
-				for _, rule := range moreRules {
-					targetsMap[TargetKey(*target.File, Target{ID: rule.ID})] = struct{}{}
-				}
-
 				rulesMap[*target.File] = moreRules
 			}
 		}
@@ -135,8 +131,8 @@ func RulesFromFile(file string, ranges []Range, options LintOptions) ([]Rule, er
 	return rules, nil
 }
 
-//LINT.IF lex.go
+//LINT.IF README.md
 
-// hello
+// hello!
 
 //LINT.END

@@ -133,7 +133,7 @@ func Lint(o LintOptions) (*LintResult, error) {
 	}
 
 	// Parse rules from hunks.
-	rulesMap, _, err := RulesMapFromHunks(hunks, o)
+	rulesMap, presentTargetsMap, err := RulesMapFromHunks(hunks, o)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
@@ -146,7 +146,7 @@ func Lint(o LintOptions) (*LintResult, error) {
 	println(string(data))
 
 	// Collect the rules that are not satisfied.
-	unsatisfiedRules, err := Check(rulesMap)
+	unsatisfiedRules, err := Check(rulesMap, presentTargetsMap)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check rules")
 	}
@@ -207,67 +207,36 @@ func isRelativeToCurrentDirectory(path string) bool {
 }
 
 // Check returns the list of unsatisfied rules for the given map of rules.
-func Check(rulesMap map[string][]Rule) (UnsatisfiedRules, error) {
-	unsatisfiedRules := make(UnsatisfiedRules, 0)
+func Check(rulesMap map[string][]Rule, targetsMap map[string]struct{}) (UnsatisfiedRules, error) {
+	var unsatisfiedRules UnsatisfiedRules
 
-	for pathnameA, rulesA := range rulesMap {
-		for i, ruleA := range rulesA {
-			// Skip if ruleA is not present or has no targets.
-			if !ruleA.Present || len(ruleA.Targets) == 0 {
+	// Check each rule.
+	for _, rules := range rulesMap {
+		for _, rule := range rules {
+			if !rule.Present {
 				continue
 			}
 
+			// TODO: Figure this out.
+			// Wait I have a problem because how does README.md know about the rule in this file?
+			// A rule's target is unsatisfied if it is not present in the targets map.
 			unsatisfiedTargets := make(map[int]struct{})
-			isSatisfied := false
-
-			for pathnameB, rulesB := range rulesMap {
-				if pathnameA == pathnameB && i < len(rulesB) {
-					continue
-				}
-
-				for _, ruleB := range rulesB {
-					// Skip if ruleB is not present.
-					if !ruleB.Present {
-						continue
-					}
-
-					// Check if ruleA is satisfied by ruleB.
-					for _, target := range ruleA.Targets {
-						for _, targetB := range ruleB.Targets {
-							if target.ID == targetB.ID && ((target.File == nil && pathnameA == pathnameB) || (*target.File == pathnameB)) {
-								isSatisfied = true
-								break
-							}
-						}
-
-						if isSatisfied {
-							break
-						}
-					}
-
-					if isSatisfied {
-						break
-					}
-				}
-
-				if isSatisfied {
-					break
+			for i, target := range rule.Targets {
+				if _, ok := targetsMap[TargetKey(rule.Hunk.File, target)]; !ok {
+					unsatisfiedTargets[i] = struct{}{}
 				}
 			}
 
-			if !isSatisfied {
-				for k := range ruleA.Targets {
-					unsatisfiedTargets[k] = struct{}{}
-				}
-
+			if len(unsatisfiedTargets) > 0 {
 				unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
-					Rule:               ruleA,
+					Rule:               rule,
 					UnsatisfiedTargets: unsatisfiedTargets,
 				})
 			}
 		}
 	}
 
+	// Return the unordered list of unsatisfied rules.
 	return unsatisfiedRules, nil
 }
 
