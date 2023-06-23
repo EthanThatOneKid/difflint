@@ -208,50 +208,62 @@ func isRelativeToCurrentDirectory(path string) bool {
 
 // Check returns the list of unsatisfied rules for the given map of rules.
 func Check(rulesMap map[string][]Rule) (UnsatisfiedRules, error) {
-	var unsatisfiedRules UnsatisfiedRules
+	unsatisfiedRules := make(UnsatisfiedRules, 0)
+
 	for pathnameA, rulesA := range rulesMap {
-	outer:
 		for i, ruleA := range rulesA {
-			// Skip if ruleA has no targets or if it is present.
-			if len(ruleA.Targets) == 0 || ruleA.Present {
+			// Skip if ruleA is not present or has no targets.
+			if !ruleA.Present || len(ruleA.Targets) == 0 {
 				continue
 			}
 
+			unsatisfiedTargets := make(map[int]struct{})
+			isSatisfied := false
+
 			for pathnameB, rulesB := range rulesMap {
-			inner:
-				for j, ruleB := range rulesB {
-					// Skip if both rules are not present or if ruleA is the same as ruleB.
-					if !ruleB.Present || (pathnameA == pathnameB && i == j) {
+				if pathnameA == pathnameB && i < len(rulesB) {
+					continue
+				}
+
+				for _, ruleB := range rulesB {
+					// Skip if ruleB is not present.
+					if !ruleB.Present {
 						continue
 					}
 
-					// Given that ruleA is not present and ruleB is present, check if ruleA
-					// is satisfied by ruleB.
-					unsatisfiedTargetIndices := make(map[int]struct{})
-					for k, target := range ruleA.Targets {
-						// Check if any target of ruleA is satisfied by any target of ruleB.
-						satisfied := false
+					// Check if ruleA is satisfied by ruleB.
+					for _, target := range ruleA.Targets {
 						for _, targetB := range ruleB.Targets {
 							if target.ID == targetB.ID && ((target.File == nil && pathnameA == pathnameB) || (*target.File == pathnameB)) {
-								satisfied = true
+								isSatisfied = true
 								break
 							}
 						}
 
-						if satisfied {
-							continue inner
+						if isSatisfied {
+							break
 						}
-
-						// Otherwise, add the target index to the list of unsatisfied targets.
-						unsatisfiedTargetIndices[k] = struct{}{}
 					}
 
-					unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
-						Rule:               ruleA,
-						UnsatisfiedTargets: unsatisfiedTargetIndices,
-					})
-					continue outer
+					if isSatisfied {
+						break
+					}
 				}
+
+				if isSatisfied {
+					break
+				}
+			}
+
+			if !isSatisfied {
+				for k := range ruleA.Targets {
+					unsatisfiedTargets[k] = struct{}{}
+				}
+
+				unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
+					Rule:               ruleA,
+					UnsatisfiedTargets: unsatisfiedTargets,
+				})
 			}
 		}
 	}

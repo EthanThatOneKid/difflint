@@ -197,6 +197,6 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 
 //LINT.IF rules.go
 
-// poop
+// poop!
 
 //LINT.END
