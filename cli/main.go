@@ -82,6 +82,12 @@ func action(ctx *cli.Context) error {
 	}
 
 	if len(unsatisfiedRules) > 0 {
+		// data, err := json.MarshalIndent(unsatisfiedRules, "", "  ")
+		// if err != nil {
+		// 	return err
+		// }
+
+		// println(string(data))
 		return cli.Exit(unsatisfiedRules.String(), 1)
 	}
 

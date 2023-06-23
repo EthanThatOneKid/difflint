@@ -1,6 +1,7 @@
 package difflint
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -87,6 +88,7 @@ type UnsatisfiedRule struct {
 	UnsatisfiedTargets map[int]struct{}
 }
 
+// UnsatisfiedRules is a list of unsatisfied rules.
 type UnsatisfiedRules []UnsatisfiedRule
 
 // String returns a string representation of the unsatisfied rules.
@@ -136,11 +138,23 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
+	data, err := json.MarshalIndent(rulesMap, "", "  ")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal rules map")
+	}
+	println(string(data))
+
 	// Collect the rules that are not satisfied.
 	unsatisfiedRules, err := Check(rulesMap)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check rules")
 	}
+
+	data, err = json.MarshalIndent(unsatisfiedRules, "", "  ")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal rules map")
+	}
+	println(string(data))
 
 	// Filter out rules that are not intended to be included in the output.
 	filteredUnsatisfiedRules := make(UnsatisfiedRules, len(unsatisfiedRules))
@@ -196,25 +210,32 @@ func Check(rulesMap map[string][]Rule) (UnsatisfiedRules, error) {
 	for pathnameA, rulesA := range rulesMap {
 	outer:
 		for i, ruleA := range rulesA {
-			// Skip if ruleA is not present or if it has no targets.
-			if len(ruleA.Targets) == 0 || !ruleA.Present {
+			// Skip if ruleA has no targets or if it is present.
+			if len(ruleA.Targets) == 0 || ruleA.Present {
 				continue
 			}
 
 			for pathnameB, rulesB := range rulesMap {
 			inner:
 				for j, ruleB := range rulesB {
-					// Skip if both rules are present or if ruleA is the same as ruleB.
-					if ruleB.Present || (pathnameA == pathnameB && i == j) {
+					// Skip if both rules are not present or if ruleA is the same as ruleB.
+					if !ruleB.Present || (pathnameA == pathnameB && i == j) {
 						continue
 					}
 
-					// Given that ruleA is present and ruleB is not present, check if ruleA
+					// Given that ruleA is not present and ruleB is present, check if ruleA
 					// is satisfied by ruleB.
 					unsatisfiedTargetIndices := make(map[int]struct{})
 					for k, target := range ruleA.Targets {
-						// ruleA is satisfied by ruleB if ruleB matches a target of ruleA.
-						satisfied := target.ID == ruleB.ID && ((target.File == nil && pathnameA == pathnameB) || (*target.File == pathnameB))
+						// Check if any target of ruleA is satisfied by any target of ruleB.
+						satisfied := false
+						for _, targetB := range ruleB.Targets {
+							if target.ID == targetB.ID && ((target.File == nil && pathnameA == pathnameB) || (*target.File == pathnameB)) {
+								satisfied = true
+								break
+							}
+						}
+
 						if satisfied {
 							continue inner
 						}

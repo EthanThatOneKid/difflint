@@ -52,11 +52,15 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 	// Populate rules map.
 	rulesMap := make(map[string][]Rule, len(hunks))
 	visited := make(map[string]struct{})
-	var wg sync.WaitGroup
+
 	for pathname, ranges := range rangesMap {
-		rules, err := RulesFromFile(pathname, ranges, visited, &wg, options)
+		rules, err := RulesFromFile(pathname, ranges, &visited, options)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		if len(rules) == 0 {
+			continue
 		}
 
 		for _, rule := range rules {
@@ -66,14 +70,12 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 		rulesMap[pathname] = rules
 	}
 
-	wg.Wait()
-
 	return rulesMap, targetsMap, nil
 }
 
 // RulesFromFile parses rules from the given file and returns the list of rules.
-func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{}, wg *sync.WaitGroup, options LintOptions) ([]Rule, error) {
-	visited[pathname] = struct{}{}
+func RulesFromFile(pathname string, ranges []Range, visited *map[string]struct{}, options LintOptions) ([]Rule, error) {
+	(*visited)[pathname] = struct{}{}
 
 	// Parse rules for the file.
 	log.Println("Parsing rules for file", pathname)
@@ -113,11 +115,11 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 			go func(pathname string) {
 				defer innerWg.Done()
 
-				if _, ok := visited[pathname]; ok {
+				if _, ok := (*visited)[pathname]; ok {
 					return
 				}
 
-				moreRules, err := RulesFromFile(pathname, nil, visited, &innerWg, options)
+				moreRules, err := RulesFromFile(pathname, nil, visited, options)
 				if err != nil {
 					return
 				}
@@ -133,3 +135,9 @@ func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{},
 	// Add rules to the map.
 	return rules, nil
 }
+
+//LINT.IF lex.go:poop
+
+// hello
+
+//LINT.END poop

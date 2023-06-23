@@ -194,3 +194,9 @@ func parseTargets(o parseTargetsOptions) ([]Target, error) {
 
 	return targets, nil
 }
+
+//LINT.IF rules.go:poop
+
+// poop
+
+//LINT.END poop
