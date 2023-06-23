@@ -74,34 +74,35 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 }
 
 // RulesFromFile parses rules from the given file and returns the list of rules.
-func RulesFromFile(pathname string, ranges []Range, visited *map[string]struct{}, options LintOptions) ([]Rule, error) {
-	(*visited)[pathname] = struct{}{}
+func RulesFromFile(file string, ranges []Range, visited *map[string]struct{}, options LintOptions) ([]Rule, error) {
+	(*visited)[file] = struct{}{}
 
 	// Parse rules for the file.
-	log.Println("Parsing rules for file", pathname)
-	file, err := os.Open(pathname)
+	log.Println("parsing rules for file", file)
+	f, err := os.Open(file)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to open file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to open file %s", file)
 	}
 
-	defer file.Close()
+	defer f.Close()
 
-	templates, err := options.TemplatesFromFile(pathname)
+	templates, err := options.TemplatesFromFile(file)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse templates for file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to parse templates for file %s", file)
 	}
 
-	tokens, err := lex(file, lexOptions{
-		file:      pathname,
+	tokens, err := lex(f, lexOptions{
+		file:      file,
 		templates: templates,
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to lex file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to lex file %s", file)
 	}
 
-	rules, err := parseRules(pathname, tokens, ranges)
+	// TODO: Correctly parse rules from the file.
+	rules, err := parseRules(file, tokens, ranges)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to parse rules for file %s", file)
 	}
 
 	var innerWg sync.WaitGroup // WaitGroup for inner goroutines
