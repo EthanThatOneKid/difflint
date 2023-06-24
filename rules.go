@@ -73,6 +73,7 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 		if err != nil {
 			return errors.Wrapf(err, "failed to parse rules for file %s", file)
 		}
+		log.Printf("parsed %d rules for file %s", len(rules), file)
 
 		for _, rule := range rules {
 			if rule.Hunk.File != file {
@@ -108,34 +109,4 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 	}
 
 	return rulesMap, targetsMap, nil
-}
-
-// RulesFromFile parses rules from the given file and returns the list of rules.
-func RulesFromFile(file string, ranges []Range, options LintOptions) ([]Rule, error) {
-	// Parse rules for the file.
-	log.Println("parsing rules for file", file)
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to open file %s", file)
-	}
-
-	defer f.Close()
-
-	templates, err := options.TemplatesFromFile(file)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse templates for file %s", file)
-	}
-
-	tokens, err := lex(f, lexOptions{file, templates})
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to lex file %s", file)
-	}
-
-	rules, err := parseRules(file, tokens, ranges)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse rules for file %s", file)
-	}
-
-	// Add rules to the map.
-	return rules, nil
 }
