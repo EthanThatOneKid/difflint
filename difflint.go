@@ -1,7 +1,6 @@
 package difflint
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -174,33 +173,14 @@ func Lint(o LintOptions) (*LintResult, error) {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
-	// TODO: Delete this.
-	data, err := json.MarshalIndent(rulesMap, "", "  ")
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal rules map")
-	}
-	println(string(data))
-	data, err = json.MarshalIndent(presentTargetsMap, "", "  ")
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal rules map")
-	}
-	println(string(data))
-
 	// Collect the rules that are not satisfied.
 	unsatisfiedRules, err := Check(rulesMap, presentTargetsMap)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check rules")
 	}
 
-	// TODO: Delete this.
-	data, err = json.MarshalIndent(unsatisfiedRules, "", "  ")
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal rules map")
-	}
-	println(string(data))
-
 	// Filter out rules that are not intended to be included in the output.
-	filteredUnsatisfiedRules := make(UnsatisfiedRules, len(unsatisfiedRules))
+	var filteredUnsatisfiedRules UnsatisfiedRules
 	for _, rule := range unsatisfiedRules {
 		included, err := Include(rule.Rule.Hunk.File, o.Include, o.Exclude)
 		if err != nil {

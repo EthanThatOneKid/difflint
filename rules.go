@@ -139,9 +139,3 @@ func RulesFromFile(file string, ranges []Range, options LintOptions) ([]Rule, er
 	// Add rules to the map.
 	return rules, nil
 }
-
-//LINT.IF README.md
-
-// hello!
-
-//LINT.END
