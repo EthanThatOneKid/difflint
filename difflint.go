@@ -123,26 +123,16 @@ type LintResult struct {
 // Walk walks the file tree rooted at root, calling callback for each file or
 // directory in the tree, including root.
 func Walk(root string, include []string, exclude []string, callback filepath.WalkFunc) error {
-	isHidden := func(path string) bool {
-		components := strings.Split(path, string(os.PathSeparator))
-		for _, component := range components {
-			if strings.HasPrefix(component, ".") && component != "." && component != ".." {
-				return true
-			}
-		}
-		return false
-	}
-
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.IsDir() {
-			return nil
+		if info.IsDir() && filepath.Base(path) == ".git" {
+			return filepath.SkipDir
 		}
 
-		if isHidden(path) {
+		if info.IsDir() {
 			return nil
 		}
 
@@ -151,12 +141,17 @@ func Walk(root string, include []string, exclude []string, callback filepath.Wal
 			return err
 		}
 
-		if !included {
-			return nil
+		if included {
+			return callback(path, info, nil)
 		}
 
-		return callback(path, info, nil)
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Lint lints the given hunks against the given rules and returns the result.
