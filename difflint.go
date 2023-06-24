@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -50,10 +51,6 @@ type LintOptions struct {
 // TemplatesFromFile returns the directive templates for the given file type.
 func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
 	fileType := strings.TrimPrefix(filepath.Ext(file), ".")
-	if fileType == "" {
-		return nil, errors.Errorf("file %q has no extension", file)
-	}
-
 	templateIndices, ok := o.FileExtMap[fileType]
 	if !ok {
 		templateIndices = []int{o.DefaultTemplate}
@@ -124,6 +121,45 @@ type LintResult struct {
 	UnsatisfiedRules UnsatisfiedRules
 }
 
+// Walk walks the file tree rooted at root, calling callback for each file or
+// directory in the tree, including root.
+func Walk(root string, include []string, exclude []string, callback filepath.WalkFunc) error {
+	isHidden := func(path string) bool {
+		components := strings.Split(path, string(os.PathSeparator))
+		for _, component := range components {
+			if strings.HasPrefix(component, ".") && component != "." && component != ".." {
+				return true
+			}
+		}
+		return false
+	}
+
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		if isHidden(path) {
+			return nil
+		}
+
+		included, err := Include(path, include, exclude)
+		if err != nil {
+			return err
+		}
+
+		if !included {
+			return nil
+		}
+
+		return callback(path, info, nil)
+	})
+}
+
 // Lint lints the given hunks against the given rules and returns the result.
 func Lint(o LintOptions) (*LintResult, error) {
 	// Parse the diff hunks.
@@ -140,6 +176,11 @@ func Lint(o LintOptions) (*LintResult, error) {
 
 	// TODO: Delete this.
 	data, err := json.MarshalIndent(rulesMap, "", "  ")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal rules map")
+	}
+	println(string(data))
+	data, err = json.MarshalIndent(presentTargetsMap, "", "  ")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal rules map")
 	}
@@ -213,20 +254,15 @@ func Check(rulesMap map[string][]Rule, targetsMap map[string]struct{}) (Unsatisf
 	// Check each rule.
 	for _, rules := range rulesMap {
 		for _, rule := range rules {
-			if !rule.Present {
-				continue
-			}
-
-			// TODO: Figure this out.
-			// Wait I have a problem because how does README.md know about the rule in this file?
-			// A rule's target is unsatisfied if it is not present in the targets map.
-			unsatisfiedTargets := make(map[int]struct{})
+			unsatisfiedTargets := make(map[int]struct{}, len(rule.Targets))
 			for i, target := range rule.Targets {
-				if _, ok := targetsMap[TargetKey(rule.Hunk.File, target)]; !ok {
+				key := TargetKey(rule.Hunk.File, target)
+				if _, ok := targetsMap[key]; rule.Present != ok {
 					unsatisfiedTargets[i] = struct{}{}
 				}
 			}
 
+			// If there are unsatisfied targets, then the rule is unsatisfied.
 			if len(unsatisfiedTargets) > 0 {
 				unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
 					Rule:               rule,

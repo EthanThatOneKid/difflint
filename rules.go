@@ -35,7 +35,6 @@ type Rule struct {
 // RulesMapFromHunks parses rules from the given hunks by file name and
 // returns the map of rules and the set of all the target keys that are present.
 func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, map[string]struct{}, error) {
-	// Separate hunks by file name and construct a set of all the target keys that exist.
 	targetsMap := make(map[string]struct{}, len(hunks))
 	rangesMap := make(map[string][]Range, len(hunks))
 	for _, hunk := range hunks {
@@ -48,54 +47,64 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 		rangesMap[hunk.File] = []Range{hunk.Range}
 	}
 
-	// Populate rules map.
 	rulesMap := make(map[string][]Rule, len(hunks))
-	visited := make(map[string]struct{})
-
-	// First pass parses all the rules from files that are present in the diff.
-	for pathname, ranges := range rangesMap {
-		visited[pathname] = struct{}{}
-		rules, err := RulesFromFile(pathname, ranges, options)
+	err := Walk(".", nil, nil, func(file string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 
-		if len(rules) == 0 {
-			continue
+		f, err := os.Open(file)
+		if err != nil {
+			return errors.Wrapf(err, "failed to open file %s", file)
+		}
+		defer f.Close()
+
+		templates, err := options.TemplatesFromFile(file)
+		if err != nil {
+			return errors.Wrapf(err, "failed to parse templates for file %s", file)
+		}
+
+		tokens, err := lex(f, lexOptions{file, templates})
+		if err != nil {
+			return errors.Wrapf(err, "failed to lex file %s", file)
+		}
+
+		rules, err := parseRules(file, tokens, rangesMap[file])
+		if err != nil {
+			return errors.Wrapf(err, "failed to parse rules for file %s", file)
 		}
 
 		for _, rule := range rules {
-			targetsMap[TargetKey(pathname, Target{ID: rule.ID})] = struct{}{}
-		}
+			if rule.Hunk.File != file {
+				continue
+			}
 
-		rulesMap[pathname] = rules
-	}
+			ranges, ok := rangesMap[file]
+			if !ok {
+				continue
+			}
 
-	// Second pass parses all targets rules that were not present in the diff.
-	for _, rules := range rulesMap {
-		for _, rule := range rules {
-			for _, target := range rule.Targets {
-				if target.File == nil {
+			for _, rng := range ranges {
+				if !Intersects(rule.Hunk.Range, rng) {
 					continue
 				}
 
-				if _, ok := visited[*target.File]; ok {
-					continue
-				}
-
-				visited[*target.File] = struct{}{}
-				moreRules, err := RulesFromFile(*target.File, nil, options)
-				if err != nil {
-					return nil, nil, err
-				}
-
-				if len(moreRules) == 0 {
-					continue
-				}
-
-				rulesMap[*target.File] = moreRules
+				key := TargetKey(file, Target{
+					File: &rule.Hunk.File,
+					ID:   rule.ID,
+				})
+				targetsMap[key] = struct{}{}
 			}
 		}
+
+		if len(rules) > 0 {
+			rulesMap[file] = rules
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to walk files")
 	}
 
 	return rulesMap, targetsMap, nil
