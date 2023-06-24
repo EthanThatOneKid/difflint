@@ -1,4 +1,4 @@
-# difflint!
+# difflint
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ethanthatonekid/difflint.svg)](https://pkg.go.dev/github.com/ethanthatonekid/difflint)
 

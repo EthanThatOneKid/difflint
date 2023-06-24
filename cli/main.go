@@ -1,5 +1,5 @@
 // Run:
-// git diff | go run cli/main.go
+// git diff | go run cli/main.go --verbose
 
 package main
 
