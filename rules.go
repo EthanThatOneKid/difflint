@@ -3,7 +3,6 @@ package difflint
 import (
 	"log"
 	"os"
-	"sync"
 
 	"github.com/pkg/errors"
 )
@@ -34,9 +33,8 @@ type Rule struct {
 }
 
 // RulesMapFromHunks parses rules from the given hunks by file name and
-// returns the map of rules.
+// returns the map of rules and the set of all the target keys that are present.
 func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, map[string]struct{}, error) {
-	// Separate hunks by file name and construct a set of all the target keys that exist.
 	targetsMap := make(map[string]struct{}, len(hunks))
 	rangesMap := make(map[string][]Range, len(hunks))
 	for _, hunk := range hunks {
@@ -49,86 +47,94 @@ func RulesMapFromHunks(hunks []Hunk, options LintOptions) (map[string][]Rule, ma
 		rangesMap[hunk.File] = []Range{hunk.Range}
 	}
 
-	// Populate rules map.
 	rulesMap := make(map[string][]Rule, len(hunks))
-	visited := make(map[string]struct{})
-	var wg sync.WaitGroup
-	for pathname, ranges := range rangesMap {
-		rules, err := RulesFromFile(pathname, ranges, visited, &wg, options)
+	err := Walk(".", nil, nil, func(file string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil, nil, err
+			return err
+		}
+
+		f, err := os.Open(file)
+		if err != nil {
+			return errors.Wrapf(err, "failed to open file %s", file)
+		}
+		defer f.Close()
+
+		templates, err := options.TemplatesFromFile(file)
+		if err != nil {
+			return errors.Wrapf(err, "failed to parse templates for file %s", file)
+		}
+
+		tokens, err := lex(f, lexOptions{file, templates})
+		if err != nil {
+			return errors.Wrapf(err, "failed to lex file %s", file)
+		}
+
+		rules, err := parseRules(file, tokens, rangesMap[file])
+		if err != nil {
+			return errors.Wrapf(err, "failed to parse rules for file %s", file)
 		}
 
 		for _, rule := range rules {
-			targetsMap[TargetKey(pathname, Target{ID: rule.ID})] = struct{}{}
+			if rule.Hunk.File != file {
+				continue
+			}
+
+			ranges, ok := rangesMap[file]
+			if !ok {
+				continue
+			}
+
+			for _, rng := range ranges {
+				if !Intersects(rule.Hunk.Range, rng) {
+					continue
+				}
+
+				key := TargetKey(file, Target{
+					File: &rule.Hunk.File,
+					ID:   rule.ID,
+				})
+				targetsMap[key] = struct{}{}
+			}
 		}
 
-		rulesMap[pathname] = rules
-	}
+		if len(rules) > 0 {
+			rulesMap[file] = rules
+		}
 
-	wg.Wait()
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to walk files")
+	}
 
 	return rulesMap, targetsMap, nil
 }
 
 // RulesFromFile parses rules from the given file and returns the list of rules.
-func RulesFromFile(pathname string, ranges []Range, visited map[string]struct{}, wg *sync.WaitGroup, options LintOptions) ([]Rule, error) {
-	visited[pathname] = struct{}{}
-
+func RulesFromFile(file string, ranges []Range, options LintOptions) ([]Rule, error) {
 	// Parse rules for the file.
-	log.Println("Parsing rules for file", pathname)
-	file, err := os.Open(pathname)
+	log.Println("parsing rules for file", file)
+	f, err := os.Open(file)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to open file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to open file %s", file)
 	}
 
-	defer file.Close()
+	defer f.Close()
 
-	templates, err := options.TemplatesFromFile(pathname)
+	templates, err := options.TemplatesFromFile(file)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse templates for file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to parse templates for file %s", file)
 	}
 
-	tokens, err := lex(file, lexOptions{
-		file:      pathname,
-		templates: templates,
-	})
+	tokens, err := lex(f, lexOptions{file, templates})
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to lex file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to lex file %s", file)
 	}
 
-	rules, err := parseRules(pathname, tokens, ranges)
+	rules, err := parseRules(file, tokens, ranges)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse rules for file %s", pathname)
+		return nil, errors.Wrapf(err, "failed to parse rules for file %s", file)
 	}
-
-	var innerWg sync.WaitGroup // WaitGroup for inner goroutines
-	for _, rule := range rules {
-		for _, target := range rule.Targets {
-			if target.File == nil {
-				continue
-			}
-
-			innerWg.Add(1)
-			go func(pathname string) {
-				defer innerWg.Done()
-
-				if _, ok := visited[pathname]; ok {
-					return
-				}
-
-				moreRules, err := RulesFromFile(pathname, nil, visited, &innerWg, options)
-				if err != nil {
-					return
-				}
-
-				rules = append(rules, moreRules...)
-			}(*target.File)
-		}
-	}
-
-	// Wait for all inner goroutines to complete before returning.
-	innerWg.Wait()
 
 	// Add rules to the map.
 	return rules, nil

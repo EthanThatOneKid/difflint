@@ -3,6 +3,7 @@ package difflint
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -49,10 +50,6 @@ type LintOptions struct {
 // TemplatesFromFile returns the directive templates for the given file type.
 func (o *LintOptions) TemplatesFromFile(file string) ([]string, error) {
 	fileType := strings.TrimPrefix(filepath.Ext(file), ".")
-	if fileType == "" {
-		return nil, errors.Errorf("file %q has no extension", file)
-	}
-
 	templateIndices, ok := o.FileExtMap[fileType]
 	if !ok {
 		templateIndices = []int{o.DefaultTemplate}
@@ -87,6 +84,7 @@ type UnsatisfiedRule struct {
 	UnsatisfiedTargets map[int]struct{}
 }
 
+// UnsatisfiedRules is a list of unsatisfied rules.
 type UnsatisfiedRules []UnsatisfiedRule
 
 // String returns a string representation of the unsatisfied rules.
@@ -122,6 +120,45 @@ type LintResult struct {
 	UnsatisfiedRules UnsatisfiedRules
 }
 
+// Walk walks the file tree rooted at root, calling callback for each file or
+// directory in the tree, including root.
+func Walk(root string, include []string, exclude []string, callback filepath.WalkFunc) error {
+	isHidden := func(path string) bool {
+		components := strings.Split(path, string(os.PathSeparator))
+		for _, component := range components {
+			if strings.HasPrefix(component, ".") && component != "." && component != ".." {
+				return true
+			}
+		}
+		return false
+	}
+
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		if isHidden(path) {
+			return nil
+		}
+
+		included, err := Include(path, include, exclude)
+		if err != nil {
+			return err
+		}
+
+		if !included {
+			return nil
+		}
+
+		return callback(path, info, nil)
+	})
+}
+
 // Lint lints the given hunks against the given rules and returns the result.
 func Lint(o LintOptions) (*LintResult, error) {
 	// Parse the diff hunks.
@@ -131,18 +168,33 @@ func Lint(o LintOptions) (*LintResult, error) {
 	}
 
 	// Parse rules from hunks.
-	rulesMap, _, err := RulesMapFromHunks(hunks, o)
+	rulesMap, presentTargetsMap, err := RulesMapFromHunks(hunks, o)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse rules from hunks")
 	}
 
 	// Collect the rules that are not satisfied.
-	unsatisfiedRules, err := Check(rulesMap)
+	unsatisfiedRules, err := Check(rulesMap, presentTargetsMap)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check rules")
 	}
 
-	return &LintResult{UnsatisfiedRules: unsatisfiedRules}, nil
+	// Filter out rules that are not intended to be included in the output.
+	var filteredUnsatisfiedRules UnsatisfiedRules
+	for _, rule := range unsatisfiedRules {
+		included, err := Include(rule.Rule.Hunk.File, o.Include, o.Exclude)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to check if file is included")
+		}
+
+		if !included {
+			continue
+		}
+
+		filteredUnsatisfiedRules = append(filteredUnsatisfiedRules, rule)
+	}
+
+	return &LintResult{UnsatisfiedRules: filteredUnsatisfiedRules}, nil
 }
 
 // TargetKey returns the key for the given target.
@@ -176,52 +228,35 @@ func isRelativeToCurrentDirectory(path string) bool {
 }
 
 // Check returns the list of unsatisfied rules for the given map of rules.
-func Check(rulesMap map[string][]Rule) (UnsatisfiedRules, error) {
+func Check(rulesMap map[string][]Rule, targetsMap map[string]struct{}) (UnsatisfiedRules, error) {
 	var unsatisfiedRules UnsatisfiedRules
-	for pathnameA, rulesA := range rulesMap {
-	outer:
-		for i, ruleA := range rulesA {
-			// Skip if ruleA is not present or if it has no targets.
-			if len(ruleA.Targets) == 0 || !ruleA.Present {
-				continue
+
+	// Check each rule.
+	for _, rules := range rulesMap {
+		for _, rule := range rules {
+			unsatisfiedTargets := make(map[int]struct{}, len(rule.Targets))
+			for i, target := range rule.Targets {
+				key := TargetKey(rule.Hunk.File, target)
+				if _, ok := targetsMap[key]; rule.Present != ok {
+					unsatisfiedTargets[i] = struct{}{}
+				}
 			}
 
-			for pathnameB, rulesB := range rulesMap {
-			inner:
-				for j, ruleB := range rulesB {
-					// Skip if both rules are present or if ruleA is the same as ruleB.
-					if ruleB.Present || (pathnameA == pathnameB && i == j) {
-						continue
-					}
-
-					// Given that ruleA is present and ruleB is not present, check if ruleA
-					// is satisfied by ruleB.
-					unsatisfiedTargetIndices := make(map[int]struct{})
-					for k, target := range ruleA.Targets {
-						// ruleA is satisfied by ruleB if ruleB matches a target of ruleA.
-						satisfied := target.ID == ruleB.ID && ((target.File == nil && pathnameA == pathnameB) || (*target.File == pathnameB))
-						if satisfied {
-							continue inner
-						}
-
-						// Otherwise, add the target index to the list of unsatisfied targets.
-						unsatisfiedTargetIndices[k] = struct{}{}
-					}
-
-					unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
-						Rule:               ruleA,
-						UnsatisfiedTargets: unsatisfiedTargetIndices,
-					})
-					continue outer
-				}
+			// If there are unsatisfied targets, then the rule is unsatisfied.
+			if len(unsatisfiedTargets) > 0 {
+				unsatisfiedRules = append(unsatisfiedRules, UnsatisfiedRule{
+					Rule:               rule,
+					UnsatisfiedTargets: unsatisfiedTargets,
+				})
 			}
 		}
 	}
 
+	// Return the unordered list of unsatisfied rules.
 	return unsatisfiedRules, nil
 }
 
-// Entrypoint for the difflint command.
+// Do is the difflint command's entrypoint.
 func Do(r io.Reader, include, exclude []string, extMapPath string) (UnsatisfiedRules, error) {
 	// Parse options.
 	extMap := NewExtMap(extMapPath)
@@ -237,25 +272,6 @@ func Do(r io.Reader, include, exclude []string, extMapPath string) (UnsatisfiedR
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to lint hunks")
-	}
-
-	// If there are no unsatisfied rules, return nil.
-	if len(result.UnsatisfiedRules) == 0 {
-		return nil, nil
-	}
-
-	// Print the unsatisfied rules.
-	var included bool
-	for _, rule := range result.UnsatisfiedRules {
-		// Skip if the rule is not intended to be included in the output.
-		included, err = Include(rule.Hunk.File, include, exclude)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to check if file is included")
-		}
-
-		if !included {
-			continue
-		}
 	}
 
 	return result.UnsatisfiedRules, nil
