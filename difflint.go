@@ -234,10 +234,14 @@ func Check(rulesMap map[string][]Rule, targetsMap map[string]struct{}) (Unsatisf
 	// Check each rule.
 	for _, rules := range rulesMap {
 		for _, rule := range rules {
+			if rule.Present {
+				continue
+			}
+
 			unsatisfiedTargets := make(map[int]struct{}, len(rule.Targets))
 			for i, target := range rule.Targets {
 				key := TargetKey(rule.Hunk.File, target)
-				if _, ok := targetsMap[key]; rule.Present != ok {
+				if _, ok := targetsMap[key]; ok {
 					unsatisfiedTargets[i] = struct{}{}
 				}
 			}
